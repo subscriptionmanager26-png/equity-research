@@ -24,7 +24,7 @@ export async function ingestAndDispatch(input: {
   try {
     const result = await dispatchToCursor(job);
     if (!result.ok) {
-      const detail = `Cursor webhook returned HTTP ${result.status}`;
+      const detail = cursorErrorDetail(result.status, result.body);
       await addJobEvent(
         job.id,
         { type: "cursor_error", detail },
@@ -104,6 +104,16 @@ export async function deliverReply(input: {
   }
 
   return { chatId, telegramMessageId };
+}
+
+function cursorErrorDetail(status: number, body: unknown) {
+  if (body && typeof body === "object" && "error" in body) {
+    const message = (body as { error?: unknown }).error;
+    if (typeof message === "string" && message.trim()) {
+      return message.trim();
+    }
+  }
+  return `Cursor webhook returned HTTP ${status}`;
 }
 
 export function timingSafeEqual(a: string, b: string) {
