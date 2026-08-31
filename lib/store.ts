@@ -29,6 +29,7 @@ async function readStore(): Promise<StoreData> {
     return {
       jobs: parsed.jobs ?? [],
       chats: parsed.chats ?? [],
+      inbound: parsed.inbound ?? [],
       bot: parsed.bot,
       telegramOffset: parsed.telegramOffset,
     };

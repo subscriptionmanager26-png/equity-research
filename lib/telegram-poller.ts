@@ -37,12 +37,17 @@ async function loop() {
       const store = await getStore();
       const updates = await getUpdates(store.telegramOffset);
       for (const update of updates) {
-        await updateStore((data) => {
-          data.telegramOffset = update.update_id + 1;
-        });
         const message = update.message ?? update.edited_message;
-        if (message) {
-          await handleTelegramMessage(message);
+        try {
+          if (message) {
+            await handleTelegramMessage(message);
+          }
+        } catch (error) {
+          console.error("[relay] Telegram update handler failed", error);
+        } finally {
+          await updateStore((data) => {
+            data.telegramOffset = update.update_id + 1;
+          });
         }
       }
     } catch (error) {

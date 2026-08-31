@@ -1,5 +1,5 @@
 import { getStore, updateStore } from "@/lib/store";
-import type { Job, JobEvent, JobSource, TelegramChat } from "@/lib/types";
+import type { InboundMessage, Job, JobEvent, JobSource, TelegramChat } from "@/lib/types";
 
 const MAX_JOBS = 100;
 
@@ -86,6 +86,15 @@ export async function rememberChat(chat: {
   const now = new Date().toISOString();
   await updateStore((data) => {
     upsertChat(data.chats, { ...chat, at: now });
+  });
+}
+
+export async function logInbound(entry: Omit<InboundMessage, "at">) {
+  const now = new Date().toISOString();
+  await updateStore((data) => {
+    data.inbound = data.inbound ?? [];
+    data.inbound.unshift({ ...entry, at: now });
+    data.inbound = data.inbound.slice(0, 50);
   });
 }
 

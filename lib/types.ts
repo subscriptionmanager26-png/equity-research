@@ -48,6 +48,7 @@ export type TelegramChat = {
 export type StoreData = {
   jobs: Job[];
   chats: TelegramChat[];
+  inbound?: InboundMessage[];
   bot?: {
     id: number;
     username?: string;
@@ -55,4 +56,11 @@ export type StoreData = {
     checkedAt: string;
   };
   telegramOffset?: number;
+};
+
+export type InboundMessage = {
+  at: string;
+  chatId: number;
+  text?: string;
+  kind: string;
 };

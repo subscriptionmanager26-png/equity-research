@@ -1,6 +1,6 @@
 import { getConfig } from "@/lib/config";
 import { ingestAndDispatch } from "@/lib/relay";
-import { rememberChat } from "@/lib/jobs";
+import { logInbound, rememberChat } from "@/lib/jobs";
 import {
   displayName,
   sendTelegramMessage,
@@ -19,15 +19,17 @@ export async function handleTelegramMessage(message: TelegramMessage) {
   });
 
   if (!text) {
+    await logInbound({ chatId, kind: "non-text" });
     await sendTelegramMessage({
       chatId,
       text: "Send me a text message and I will hand it to your Cursor agent.",
       replyToMessageId: message.message_id,
-    });
+    }).catch(() => undefined);
     return { ignored: true };
   }
 
   if (text === "/start" || text === "/help") {
+    await logInbound({ chatId, text, kind: "command" });
     const { cursorConfigured } = getConfig();
     await sendTelegramMessage({
       chatId,
@@ -40,14 +42,18 @@ export async function handleTelegramMessage(message: TelegramMessage) {
         "If Cursor says the automation is disabled, turn it on at cursor.com/automations, then send the task again.",
         "Commands: /start, /help",
       ].join("\n"),
-    });
+    }).catch(() => undefined);
     return { command: text };
   }
+
+  await logInbound({ chatId, text, kind: "task" });
 
   await sendTelegramMessage({
     chatId,
     text: "Sent to your Cursor agent. I will reply here when it finishes.",
     replyToMessageId: message.message_id,
+  }).catch((error) => {
+    console.error("[relay] Telegram ack failed", error);
   });
 
   try {
