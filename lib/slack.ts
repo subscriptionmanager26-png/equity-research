@@ -10,24 +10,25 @@ let botClient: WebClient | undefined;
 let userClient: WebClient | undefined;
 
 export function getSlackAuthToken() {
-  const { slackApiToken } = getConfig();
-  if (!slackApiToken) {
-    throw new Error("Set SLACK_BOT_TOKEN or SLACK_USER_TOKEN");
+  const { slackUserToken, slackBotToken } = getConfig();
+  const token = slackUserToken || slackBotToken;
+  if (!token) {
+    throw new Error("Set SLACK_USER_TOKEN or SLACK_BOT_TOKEN");
   }
-  return slackApiToken;
+  return token;
 }
 
 export function getSlackClient() {
   const cfg = getConfig();
-  if (cfg.slackBotToken) {
-    botClient ??= new WebClient(cfg.slackBotToken);
-    return botClient;
-  }
   if (cfg.slackUserToken) {
     userClient ??= new WebClient(cfg.slackUserToken);
     return userClient;
   }
-  throw new Error("Set SLACK_BOT_TOKEN or SLACK_USER_TOKEN");
+  if (cfg.slackBotToken) {
+    botClient ??= new WebClient(cfg.slackBotToken);
+    return botClient;
+  }
+  throw new Error("Set SLACK_USER_TOKEN or SLACK_BOT_TOKEN");
 }
 
 export function relayActorLabel() {

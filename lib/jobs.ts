@@ -174,6 +174,22 @@ export async function markSlackEventProcessed(eventId: string): Promise<boolean>
   });
 }
 
+export async function listSlackThreads(): Promise<SlackThreadRef[]> {
+  const data = await getStore();
+  return Object.values(data.slackThreads ?? {});
+}
+
+export async function getSlackSearchCursor() {
+  const data = await getStore();
+  return data.slackSearchCursor;
+}
+
+export async function setSlackSearchCursor(ts: string) {
+  await updateStore((data) => {
+    data.slackSearchCursor = ts;
+  });
+}
+
 export async function markSlackMessageProcessed(messageKey: string): Promise<boolean> {
   return updateStore((data) => {
     data.processedSlackMessages = data.processedSlackMessages ?? [];

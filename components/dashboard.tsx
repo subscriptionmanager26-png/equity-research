@@ -32,6 +32,7 @@ type StatusPayload = {
   slackUserConfigured: boolean;
   slackSocketConfigured: boolean;
   slackUserPollConfigured: boolean;
+  slackReplyAsUser: boolean;
   slackTriggerWord: string;
   replyConfigured: boolean;
   publicUrlSet: boolean;
@@ -252,21 +253,14 @@ export function Dashboard() {
           }
         />
         <StatusCard
-          title="Slack trigger"
-          ok={Boolean(status?.slackSocketConfigured || status?.slackUserPollConfigured)}
-          warn={Boolean(status?.slackBotConfigured && !status.slackSocketConfigured)}
+          title="Slack (as you)"
+          ok={Boolean(status?.slackUserPollConfigured)}
           detail={
             status?.slackUserPollConfigured
-              ? `User token polling for @${status.slackTriggerWord} in joined channels`
+              ? `User token — searches for "${status.slackTriggerWord}" in channels you can already read. Replies as you. No bot invites.`
               : status?.slackSocketConfigured
-                ? status.slackBot?.name
-                  ? `${status.slackBot.name} listening via Socket Mode (@${status.slackTriggerWord})`
-                  : `Socket Mode connected — use @${status.slackTriggerWord} in a channel`
-                : status?.slackBotConfigured
-                  ? "Bot token set. Add SLACK_APP_TOKEN for Socket Mode."
-                  : status?.slackUserConfigured
-                    ? "User token set but auth failed — check scopes and rotate the token."
-                    : `Set SLACK_USER_TOKEN (quick start) or SLACK_BOT_TOKEN + SLACK_APP_TOKEN`
+                ? `Bot app mode — replies as ${status.slackBot?.name ?? "the bot"}, not as you. Prefer SLACK_USER_TOKEN instead.`
+                : "Set SLACK_USER_TOKEN (xoxp-) to trigger from Slack and reply as yourself."
           }
         />
         <StatusCard

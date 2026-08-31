@@ -24,7 +24,7 @@ export function getConfig() {
     .map((id) => id.trim())
     .filter(Boolean);
 
-  const slackApiToken = slackBotToken || slackUserToken;
+  const slackApiToken = slackUserToken || slackBotToken;
 
   return {
     cursorWebhookUrl,
@@ -48,9 +48,10 @@ export function getConfig() {
     slackConfigured: Boolean(slackApiToken),
     slackBotConfigured: Boolean(slackBotToken),
     slackUserConfigured: Boolean(slackUserToken),
-    slackSocketConfigured: Boolean(slackBotToken && slackAppToken),
-    slackUserPollConfigured: Boolean(
-      slackUserToken && !(slackBotToken && slackAppToken),
+    slackUserPollConfigured: Boolean(slackUserToken),
+    slackReplyAsUser: Boolean(slackUserToken),
+    slackSocketConfigured: Boolean(
+      slackBotToken && slackAppToken && !slackUserToken,
     ),
     replyConfigured: Boolean(replyWebhookSecret),
   };
@@ -66,6 +67,7 @@ export function publicStatus() {
     slackUserConfigured: cfg.slackUserConfigured,
     slackSocketConfigured: cfg.slackSocketConfigured,
     slackUserPollConfigured: cfg.slackUserPollConfigured,
+    slackReplyAsUser: cfg.slackReplyAsUser,
     slackTriggerWord: cfg.slackTriggerWord,
     replyConfigured: cfg.replyConfigured,
     publicUrlSet: Boolean(cfg.publicUrl),

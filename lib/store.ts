@@ -38,6 +38,7 @@ async function readStore(): Promise<StoreData> {
       inbound: parsed.inbound ?? [],
       bot: parsed.bot,
       slackBot: parsed.slackBot,
+      slackSearchCursor: parsed.slackSearchCursor,
       slackPollCursors: parsed.slackPollCursors ?? {},
       processedSlackMessages: parsed.processedSlackMessages ?? [],
       telegramOffset: parsed.telegramOffset,

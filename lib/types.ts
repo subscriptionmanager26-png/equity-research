@@ -88,6 +88,7 @@ export type StoreData = {
     name?: string;
     checkedAt: string;
   };
+  slackSearchCursor?: string;
   slackPollCursors?: Record<string, string>;
   processedSlackMessages?: string[];
   telegramOffset?: number;

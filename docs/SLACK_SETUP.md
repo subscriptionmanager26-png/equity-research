@@ -1,77 +1,87 @@
-# Slack setup for Relay
+# Slack setup — reply as **you**, no bot in every channel
 
-You do **not** need a Slack app named "Pocketedge". Relay watches for the word **`pocketedge`** (configurable) in messages — e.g. `@pocketedge analyze this` or `pocketedge summarize the thread`.
+You do **not** need a Slack bot invited to every channel.
 
-## Option A — Quick start (user token only)
+Relay uses your **user token** (`xoxp-…`) to:
 
-You already have a **user token** (`xoxp-…`). That is enough to try Slack without creating a bot app.
+1. **Search** Slack for messages containing `pocketedge` in any channel you can already read
+2. **Reply in-thread as you** (`chat.postMessage` with your user token)
+3. **Follow thread replies** without saying `pocketedge` again
 
-1. Put it in `.env.local`:
-   ```bash
-   SLACK_USER_TOKEN=xoxp-…
-   SLACK_TRIGGER_WORD=pocketedge
-   ```
-2. Make sure the token has these **User Token Scopes** at [api.slack.com/apps](https://api.slack.com/apps) → your app → **OAuth & Permissions**:
-   - `channels:history`, `channels:read`
-   - `groups:history`, `groups:read`
-   - `chat:write`, `files:write`
-   - `users:read`
-3. Restart Relay (`npm run dev`).
-4. In a channel you belong to, post:
-   ```
-   @pocketedge what changed in our repo today?
-   ```
-5. Relay replies **in that thread** as **your Slack user** (because it uses your user token).
+No app named "Pocketedge" is required. `pocketedge` is just a trigger word.
 
-**Security:** If you pasted the token in chat or email, **revoke it** at api.slack.com/apps → OAuth & Permissions → Revoke, then generate a new one.
+---
 
-### Optional: limit which channels Relay watches
+## What to put in `.env.local`
+
+```bash
+SLACK_USER_TOKEN=xoxp-…
+SLACK_TRIGGER_WORD=pocketedge
+```
+
+That is all you need for the workflow you described.
+
+### User token scopes
+
+At [api.slack.com/apps](https://api.slack.com/apps) → your app → **OAuth & Permissions** → **User Token Scopes**:
+
+| Scope | Why |
+| --- | --- |
+| `search:read` | Find `pocketedge` anywhere you can read (no channel invites) |
+| `channels:history`, `groups:history` | Read thread context |
+| `channels:read`, `groups:read` | Resolve channels |
+| `chat:write` | Post replies **as you** |
+| `files:write` | Send PDFs/attachments |
+| `users:read` | Identify senders |
+
+Reinstall/reauthorize after adding scopes.
+
+---
+
+## Bot token (`xoxb-…`) — you probably don't want this
+
+A **bot token** posts as a **bot user**. It also usually must be **invited** to each channel (`/invite @bot`).
+
+| | User token `xoxp-` | Bot token `xoxb-` |
+| --- | --- | --- |
+| Replies as | **You** | A bot |
+| Channel invites | **Not needed** (uses your membership) | Needed per channel |
+| How Relay listens | Workspace search + your threads | App events / Socket Mode |
+
+If you gave Relay a bot token expecting it to reply as you, it cannot — that is a Slack platform rule. Keep the bot token out of `.env.local` unless you explicitly want a separate bot identity.
+
+---
+
+## Optional: limit to specific channels
+
+If `search:read` is unavailable on your plan, set channel IDs you are already in:
 
 ```bash
 SLACK_CHANNEL_IDS=C01234567,C76543210
 ```
 
-Leave empty to poll every channel your user has joined (up to 50).
+---
+
+## Try it
+
+In any channel you already belong to:
+
+```
+@pocketedge summarize the Q3 plan
+```
+
+Relay acks in that thread and posts the Cursor answer **as your Slack account** when the run finishes.
+
+Thread follow-up (no `pocketedge` needed):
+
+```
+Can you also add risks?
+```
 
 ---
 
-## Option B — Slack bot app (recommended for production)
+## Security
 
-Replies come from a **bot** instead of your personal account.
+If you pasted a token in chat, revoke it at api.slack.com → OAuth & Permissions → Revoke, then generate a new one.
 
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**. Name it anything (e.g. `relay-bot`).
-2. **OAuth & Permissions** → Bot Token Scopes:
-   - `app_mentions:read`
-   - `channels:history`, `channels:read`, `groups:history`, `groups:read`
-   - `chat:write`, `files:write`
-   - `im:history`, `mpim:history`
-   - `users:read`
-3. **Install to Workspace** → copy **Bot User OAuth Token** → `SLACK_BOT_TOKEN=xoxb-…`
-4. **Socket Mode** → Enable → create **App-Level Token** with `connections:write` → `SLACK_APP_TOKEN=xapp-…`
-5. **Event Subscriptions** → Enable → Subscribe to:
-   - `app_mention`
-   - `message.channels`, `message.groups`, `message.im`, `message.mpim`
-6. Invite the bot to channels: `/invite @relay-bot`
-7. Mention it using your trigger word in the app’s display name, **or** keep using `pocketedge` in message text with Option A’s text matching if you also run the poller.
-
-With Socket Mode, you do **not** need `PUBLIC_URL` for Slack triggers.
-
----
-
-## Token cheat sheet
-
-| Variable | Looks like | Purpose |
-| --- | --- | --- |
-| `SLACK_USER_TOKEN` | `xoxp-…` | Poll channels as you; post as you |
-| `SLACK_BOT_TOKEN` | `xoxb-…` | Bot posts and receives `app_mention` events |
-| `SLACK_APP_TOKEN` | `xapp-…` | Socket Mode connection |
-| `SLACK_SIGNING_SECRET` | random string | Only for HTTPS Events API at `/api/slack/events` |
-| `SLACK_TRIGGER_WORD` | `pocketedge` | Text that means “call Relay” (no app name required) |
-
----
-
-## How triggering works
-
-- **First message:** include `pocketedge` (or `@pocketedge`) with your question → Relay sends it to Cursor.
-- **Thread follow-ups:** reply in the **same thread** without saying `pocketedge` again → Relay includes prior thread messages as context.
-- **Telegram stays separate:** Slack jobs never reply on Telegram and vice versa.
+Telegram and Slack stay fully separate — answers never cross platforms.
