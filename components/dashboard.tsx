@@ -1,0 +1,466 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ArrowUpRight,
+  Bot,
+  Check,
+  Copy,
+  LoaderCircle,
+  Radio,
+  Send,
+  TriangleAlert,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import type { Job } from "@/lib/types";
+
+type StatusPayload = {
+  cursorConfigured: boolean;
+  telegramConfigured: boolean;
+  replyConfigured: boolean;
+  publicUrlSet: boolean;
+  telegramChatIdSet: boolean;
+  replyUrl: string;
+  bot: { username?: string; name?: string } | null;
+  chats: {
+    chatId: number;
+    username?: string;
+    displayName?: string;
+    lastMessageAt: string;
+  }[];
+  jobCount: number;
+};
+
+const AUTOMATION_PROMPT = `You are triggered by Relay. The webhook payload includes the user's Telegram text, a job_id, a reply_url, and a reply_token.
+
+When you have an answer, POST immediately:
+
+POST {reply_url}
+Authorization: Bearer {reply_token}
+Content-Type: application/json
+
+{
+  "job_id": "{job_id}",
+  "status": "finished",
+  "message": "<your reply, plain text is fine>"
+}
+
+If you fail, still POST with status "error" and a short explanation.
+Always use reply_url so the user sees the answer in Telegram. Do not stop without posting back.`;
+
+function CopyButton({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+      onClick={async () => {
+        await navigator.clipboard.writeText(value);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      {label ?? (copied ? "Copied" : "Copy")}
+    </Button>
+  );
+}
+
+function StatusDot({ ok, warn }: { ok: boolean; warn?: boolean }) {
+  const color = ok
+    ? "bg-emerald-400"
+    : warn
+      ? "bg-amber-400"
+      : "bg-zinc-500";
+  return (
+    <span className={`inline-block size-1.5 rounded-full ${color}`} />
+  );
+}
+
+function formatTime(iso: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(iso));
+}
+
+function statusBadge(status: Job["status"]) {
+  if (status === "replied") return { label: "Replied", variant: "default" as const };
+  if (status === "dispatched")
+    return { label: "Waiting", variant: "secondary" as const };
+  if (status === "error")
+    return { label: "Error", variant: "destructive" as const };
+  return { label: "Queued", variant: "outline" as const };
+}
+
+export function Dashboard() {
+  const [status, setStatus] = useState<StatusPayload | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [simulating, setSimulating] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+
+  const refresh = useCallback(async () => {
+    try {
+      const [statusRes, jobsRes] = await Promise.all([
+        fetch("/api/status"),
+        fetch("/api/jobs"),
+      ]);
+      if (!statusRes.ok || !jobsRes.ok) {
+        throw new Error("Could not load Relay status");
+      }
+      setStatus((await statusRes.json()) as StatusPayload);
+      const payload = (await jobsRes.json()) as { jobs: Job[] };
+      setJobs(payload.jobs);
+      setLoadError(null);
+      setReady(true);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Load failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    const immediate = window.setTimeout(() => void refresh(), 0);
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => {
+      window.clearTimeout(immediate);
+      window.clearInterval(timer);
+    };
+  }, [refresh]);
+
+  const absoluteReplyUrl = useMemo(() => {
+    if (!status) return "";
+    if (status.replyUrl.startsWith("http")) return status.replyUrl;
+    return origin ? `${origin}${status.replyUrl}` : status.replyUrl;
+  }, [origin, status]);
+
+  async function sendMessage() {
+    const prompt = text.trim();
+    if (!prompt || sending) return;
+    setSending(true);
+    setActionError(null);
+    try {
+      const response = await fetch("/api/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: prompt }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not send to Cursor");
+      }
+      setText("");
+      await refresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Send failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function simulateReply() {
+    setSimulating(true);
+    setActionError(null);
+    try {
+      const response = await fetch("/api/jobs/simulate", { method: "POST" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Simulate failed");
+      }
+      await refresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Simulate failed");
+    } finally {
+      setSimulating(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sky-300">
+            <Radio className="size-4" />
+            <p className="text-xs font-medium tracking-[0.2em] uppercase">
+              Telegram · Cursor
+            </p>
+          </div>
+          <h1 className="font-heading text-3xl tracking-tight text-white sm:text-4xl">
+            Relay
+          </h1>
+          <p className="max-w-xl text-sm leading-6 text-zinc-400">
+            Message your Telegram bot. Relay posts that text to your Cursor
+            automation webhook. When the agent POSTs back to{" "}
+            <code className="rounded bg-white/5 px-1 py-0.5 font-mono text-[12px] text-sky-200">
+              /api/reply
+            </code>
+            , the answer lands in Telegram.
+          </p>
+        </div>
+        <a
+          href="https://cursor.com/automations/abd6db4e-a511-11f1-a7d1-d6b4613131ce"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-sm text-zinc-400 transition hover:text-white"
+        >
+          Open automation
+          <ArrowUpRight className="size-3.5" />
+        </a>
+      </header>
+
+      {loadError ? (
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          {loadError}
+        </div>
+      ) : null}
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <StatusCard
+          title="Cursor webhook"
+          ok={Boolean(status?.cursorConfigured)}
+          detail={
+            status?.cursorConfigured
+              ? "Bearer token is loaded. Turn the automation on if runs stay silent."
+              : "Set CURSOR_WEBHOOK_URL and CURSOR_WEBHOOK_TOKEN in .env.local"
+          }
+        />
+        <StatusCard
+          title="Telegram bot"
+          ok={Boolean(status?.telegramConfigured)}
+          warn={Boolean(status?.telegramConfigured && !status.chats.length)}
+          detail={
+            status?.telegramConfigured
+              ? status.bot?.username
+                ? `@${status.bot.username}${
+                    status.chats[0]
+                      ? ` · last chat ${status.chats[0].displayName ?? status.chats[0].chatId}`
+                      : " · send /start to register a chat"
+                  }`
+                : "Token set. Send /start so Relay can store your chat id."
+              : "Add TELEGRAM_BOT_TOKEN from @BotFather to receive replies in Telegram."
+          }
+        />
+        <StatusCard
+          title="Reply webhook"
+          ok={Boolean(status?.replyConfigured && status.publicUrlSet)}
+          warn={Boolean(status?.replyConfigured && !status.publicUrlSet)}
+          detail={
+            status?.publicUrlSet
+              ? "PUBLIC_URL is set, so the cloud agent can POST back."
+              : "Works locally. Set PUBLIC_URL to a public HTTPS origin so Cursor can reach /api/reply."
+          }
+        />
+      </section>
+
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <div className="flex flex-col gap-6">
+          <Card className="border-white/5 bg-zinc-950/60 ring-white/10">
+            <CardHeader>
+              <CardTitle>Ask the agent</CardTitle>
+              <CardDescription>
+                Same path as Telegram: your text is POSTed to the Cursor
+                automation, then Relay waits for /api/reply.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <Textarea
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                placeholder="Summarize what changed in this repo and reply in Telegram."
+                className="min-h-28 resize-y bg-zinc-900/80"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    void sendMessage();
+                  }
+                }}
+              />
+              {actionError ? (
+                <p className="text-sm text-red-300">{actionError}</p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => void sendMessage()}
+                  disabled={sending || !text.trim()}
+                >
+                  {sending ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <Send className="size-4" />
+                  )}
+                  Send to Cursor
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => void simulateReply()}
+                  disabled={simulating || jobs.length === 0}
+                >
+                  {simulating ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <Bot className="size-4" />
+                  )}
+                  Simulate agent reply
+                </Button>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Ctrl/⌘ + Enter to send. Simulate posts a fake answer through
+                the same reply path, including Telegram if a chat is registered.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/5 bg-zinc-950/60 ring-white/10">
+            <CardHeader>
+              <CardTitle>Reply endpoint</CardTitle>
+              <CardDescription>
+                Give this URL to the agent. Auth header uses
+                REPLY_WEBHOOK_SECRET.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <CodeRow label="POST" value={absoluteReplyUrl} />
+              <CodeRow
+                label="Auth"
+                value="Authorization: Bearer <REPLY_WEBHOOK_SECRET>"
+              />
+              <Separator />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-zinc-200">
+                  Paste into the automation prompt
+                </p>
+                <CopyButton value={AUTOMATION_PROMPT} label="Copy prompt" />
+              </div>
+              <pre className="overflow-x-auto rounded-lg bg-black/50 p-3 font-mono text-[11px] leading-5 text-zinc-300">
+                {AUTOMATION_PROMPT}
+              </pre>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="border-white/5 bg-zinc-950/60 ring-white/10">
+          <CardHeader>
+            <CardTitle>Traffic</CardTitle>
+            <CardDescription>
+              {status
+                ? `${status.jobCount} job${status.jobCount === 1 ? "" : "s"} recorded`
+                : "Loading jobs…"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!ready ? (
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-10 text-sm text-zinc-400">
+                <LoaderCircle className="size-4 animate-spin" />
+                Loading jobs…
+              </div>
+            ) : jobs.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 px-4 py-10 text-center">
+                <p className="text-sm text-zinc-300">No jobs yet</p>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Send a message from the composer, or text your Telegram bot.
+                </p>
+              </div>
+            ) : (
+              <ol className="flex flex-col gap-3">
+                {jobs.map((job) => {
+                  const badge = statusBadge(job.status);
+                  return (
+                    <li
+                      key={job.id}
+                      className="rounded-xl border border-white/8 bg-black/30 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                          <span className="font-mono text-[11px] text-zinc-500">
+                            {job.id.slice(0, 18)}
+                          </span>
+                        </div>
+                        <span className="text-xs text-zinc-500">
+                          {formatTime(job.updatedAt)}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-zinc-200">
+                        {job.prompt}
+                      </p>
+                      {job.reply ? (
+                        <div className="mt-3 rounded-lg bg-sky-400/8 px-3 py-2 text-sm leading-6 text-sky-50">
+                          {job.reply.message}
+                        </div>
+                      ) : null}
+                      {job.error ? (
+                        <p className="mt-2 text-sm text-red-300">{job.error}</p>
+                      ) : null}
+                      <p className="mt-2 text-xs text-zinc-500">
+                        {job.source === "telegram"
+                          ? `Telegram${job.displayName ? ` · ${job.displayName}` : ""}`
+                          : "Dashboard"}
+                        {job.events[0] ? ` · ${job.events[0].detail}` : ""}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function StatusCard({
+  title,
+  detail,
+  ok,
+  warn,
+}: {
+  title: string;
+  detail: string;
+  ok: boolean;
+  warn?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-white/8 bg-zinc-950/50 px-4 py-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+        <StatusDot ok={ok} warn={warn} />
+        {title}
+      </div>
+      <p className="mt-1 text-xs leading-5 text-zinc-500">{detail}</p>
+    </div>
+  );
+}
+
+function CodeRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-black/40 px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
+          {label}
+        </p>
+        <p className="truncate font-mono text-xs text-sky-100">{value || "…"}</p>
+      </div>
+      <CopyButton value={value} />
+    </div>
+  );
+}
