@@ -42,7 +42,9 @@ With a bot token set, Relay long-polls Telegram (`getUpdates`). Message the bot 
 
 ## How the agent replies
 
-Relay polls the Cursor run and sends the last answer to Telegram. The automation should **not** POST to Telegram or to `/api/reply`.
+Relay polls the Cursor run and sends the last answer to Telegram. Files the agent writes under `artifacts/` (PDF, markdown, images, spreadsheets) are downloaded and sent as Telegram documents. If there are no artifacts and the answer is long, Relay also attaches `report.md`.
+
+The automation should **not** POST to Telegram or to `/api/reply`.
 
 Replace the automation prompt with the text on the dashboard (or this):
 
@@ -52,9 +54,11 @@ You are Relay's Cursor automation. Each run is a Telegram question.
 The webhook payload's "text" field is the user's question. Answer that question in your final message.
 If the payload includes files[], download each files[].url immediately (they expire in about an hour) and use those files.
 
+If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ to Telegram.
+
 Do not POST to Telegram, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
-Relay copies your final answer to Telegram automatically.
+Relay copies your final answer and artifacts to Telegram automatically.
 ```
 
 Optional: point Cursor cloud-agent **statusChange** webhooks at `/api/cursor/status`. If `CURSOR_STATUS_WEBHOOK_SECRET` is set, Relay verifies `X-Webhook-Signature`.

@@ -24,6 +24,7 @@ export type JobReply = {
   status: string;
   receivedAt: string;
   telegramMessageId?: number;
+  files?: string[];
 };
 
 export type Job = {

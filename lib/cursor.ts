@@ -28,8 +28,8 @@ export async function buildCursorPayload(job: Job) {
     text: job.prompt,
     files: files.length ? files : undefined,
     instructions: files.length
-      ? "Answer the user's text. Download each files[].url immediately (they expire in about an hour) and use those files. Do not POST to Telegram, Relay, or any other URL. Do not mention delivery, webhooks, or Telegram. Relay copies your final answer to the user automatically."
-      : "Answer the user's text. Do not POST to Telegram, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, reply_url, or Telegram. Relay copies your final answer to the user automatically.",
+      ? "Answer the user's text. Download each files[].url immediately (they expire in about an hour) and use those files. If you produce a report or any file the user should receive, write it under artifacts/ (for example artifacts/report.pdf). Relay sends artifacts/ files to Telegram. Do not POST to Telegram, Relay, or any other URL. Do not mention delivery, webhooks, or Telegram."
+      : "Answer the user's text. If you produce a report or any file the user should receive, write it under artifacts/ (for example artifacts/report.pdf or artifacts/report.md). Relay sends artifacts/ files to Telegram. Do not POST to Telegram, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or Telegram.",
   };
 }
 

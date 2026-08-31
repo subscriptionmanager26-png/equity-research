@@ -46,9 +46,11 @@ const AUTOMATION_PROMPT = `You are Relay's Cursor automation. Each run is a Tele
 The webhook payload's "text" field is the user's question. Answer that question in your final message.
 If the payload includes files[], download each files[].url immediately (they expire in about an hour) and use those files.
 
+If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ to Telegram.
+
 Do not POST to Telegram, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
-Relay copies your final answer to Telegram automatically.`;
+Relay copies your final answer and artifacts to Telegram automatically.`;
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -393,6 +395,11 @@ export function Dashboard() {
                       {job.reply ? (
                         <div className="mt-3 rounded-lg bg-sky-400/8 px-3 py-2 text-sm leading-6 text-sky-50">
                           {job.reply.message}
+                          {job.reply.files?.length ? (
+                            <p className="mt-2 text-xs text-sky-200/80">
+                              Sent files: {job.reply.files.join(", ")}
+                            </p>
+                          ) : null}
                         </div>
                       ) : null}
                       {job.error ? (

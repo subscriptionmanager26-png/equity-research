@@ -137,6 +137,33 @@ export async function sendTelegramMessage(input: {
   return lastId;
 }
 
+export async function sendTelegramFile(input: {
+  chatId: number;
+  name: string;
+  bytes: Uint8Array;
+  mime?: string;
+  caption?: string;
+}) {
+  const mime = input.mime ?? "application/octet-stream";
+  const isImage = /^(image\/jpeg|image\/png|image\/gif|image\/webp)$/.test(mime);
+  const method = isImage && input.bytes.byteLength <= 10 * 1024 * 1024 ? "sendPhoto" : "sendDocument";
+  const field = method === "sendPhoto" ? "photo" : "document";
+  const form = new FormData();
+  form.set("chat_id", String(input.chatId));
+  const copy = new Uint8Array(input.bytes.byteLength);
+  copy.set(input.bytes);
+  form.append(field, new Blob([copy], { type: mime }), input.name);
+  if (input.caption) {
+    form.set("caption", input.caption.slice(0, 1024));
+  }
+  const response = await fetch(botUrl(method), { method: "POST", body: form });
+  const payload = (await response.json()) as TelegramApiResult<{ message_id: number }>;
+  if (!payload.ok) {
+    throw new Error(payload.description ?? `Telegram ${method} failed`);
+  }
+  return payload.result?.message_id;
+}
+
 export async function getUpdates(offset?: number) {
   const result = await telegramCall<TelegramUpdate[]>("getUpdates", {
     offset,

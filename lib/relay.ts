@@ -10,7 +10,7 @@ import {
   latestChat,
   listChats,
 } from "@/lib/jobs";
-import { sendTelegramMessage } from "@/lib/telegram";
+import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
 import type { Job, JobSource } from "@/lib/types";
 
 export async function ingestAndDispatch(input: {
@@ -101,6 +101,7 @@ export async function deliverReply(input: {
   status: string;
   message: string;
   job?: Job;
+  files?: { name: string; bytes: Uint8Array; mime?: string }[];
 }) {
   const cfg = getConfig();
   const chats = await listChats();
@@ -114,14 +115,27 @@ export async function deliverReply(input: {
     chats[0]?.chatId;
 
   let telegramMessageId: number | undefined;
+  const deliveredFiles: string[] = [];
   if (chatId && cfg.telegramConfigured) {
-    telegramMessageId = await sendTelegramMessage({
-      chatId,
-      text: input.message,
-    });
+    if (input.message.trim()) {
+      telegramMessageId = await sendTelegramMessage({
+        chatId,
+        text: input.message,
+      });
+    }
+    for (const file of input.files ?? []) {
+      telegramMessageId = await sendTelegramFile({
+        chatId,
+        name: file.name,
+        bytes: file.bytes,
+        mime: file.mime,
+        caption: deliveredFiles.length === 0 ? file.name : undefined,
+      });
+      deliveredFiles.push(file.name);
+    }
   }
 
-  return { chatId, telegramMessageId };
+  return { chatId, telegramMessageId, files: deliveredFiles };
 }
 
 function cursorErrorDetail(status: number, body: unknown) {

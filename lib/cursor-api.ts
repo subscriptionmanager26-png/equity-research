@@ -1,6 +1,8 @@
 import { getConfig } from "@/lib/config";
 
 const API = "https://api.cursor.com";
+const MAX_ARTIFACT_BYTES = 45 * 1024 * 1024;
+const MAX_ARTIFACTS = 8;
 
 function apiToken() {
   return getConfig().cursorWebhookToken;
@@ -40,6 +42,89 @@ export type CursorAgentStatus = {
 
 export async function getAgent(agentId: string) {
   return cursorGet<CursorAgentStatus>(`/v0/agents/${agentId}`);
+}
+
+export type CursorArtifact = {
+  path: string;
+  sizeBytes?: number;
+};
+
+export async function listArtifacts(agentId: string): Promise<CursorArtifact[]> {
+  const data = await cursorGet<{ items?: CursorArtifact[] }>(
+    `/v1/agents/${agentId}/artifacts`,
+  );
+  return (data.items ?? []).filter((item) => item.path);
+}
+
+export async function downloadArtifact(
+  agentId: string,
+  path: string,
+): Promise<{ name: string; bytes: Uint8Array; mime: string }> {
+  const encoded = encodeURIComponent(path);
+  const data = await cursorGet<{ url?: string }>(
+    `/v1/agents/${agentId}/artifacts/download?path=${encoded}`,
+  );
+  if (!data.url) {
+    throw new Error(`No download URL for ${path}`);
+  }
+  const response = await fetch(data.url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Artifact download HTTP ${response.status} for ${path}`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const name = path.split("/").filter(Boolean).pop() ?? "artifact";
+  return { name, bytes, mime: mimeFromName(name) };
+}
+
+export async function collectAgentFiles(agentId: string) {
+  const listed = await listArtifacts(agentId);
+  const files: { name: string; bytes: Uint8Array; mime: string }[] = [];
+  for (const item of listed.slice(0, MAX_ARTIFACTS)) {
+    if (item.sizeBytes && item.sizeBytes > MAX_ARTIFACT_BYTES) continue;
+    try {
+      const file = await downloadArtifact(agentId, item.path);
+      if (file.bytes.byteLength > MAX_ARTIFACT_BYTES) continue;
+      files.push(file);
+    } catch (error) {
+      console.error(`[relay] artifact ${item.path} failed`, error);
+    }
+  }
+  return files;
+}
+
+export function mimeFromName(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "pdf":
+      return "application/pdf";
+    case "md":
+      return "text/markdown";
+    case "txt":
+      return "text/plain";
+    case "csv":
+      return "text/csv";
+    case "json":
+      return "application/json";
+    case "html":
+      return "text/html";
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 type ConversationMessage = {
