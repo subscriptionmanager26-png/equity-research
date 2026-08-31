@@ -88,6 +88,8 @@ export type StoreData = {
     name?: string;
     checkedAt: string;
   };
+  slackPollCursors?: Record<string, string>;
+  processedSlackMessages?: string[];
   telegramOffset?: number;
 };
 

@@ -3,8 +3,10 @@ export async function register() {
   if (process.env.NEXT_PHASE === "phase-production-build") return;
   const { startTelegramPoller } = await import("./lib/telegram-poller");
   const { startSlackSocket } = await import("./lib/slack-socket");
+  const { startSlackUserPoller } = await import("./lib/slack-user-poller");
   const { startCursorWaiter } = await import("./lib/cursor-wait");
   await startTelegramPoller();
   await startSlackSocket();
+  await startSlackUserPoller();
   startCursorWaiter();
 }

@@ -14,9 +14,9 @@ export async function startSlackSocket() {
   if (globalThis.__relaySlackSocket?.started) return;
   const cfg = getConfig();
   if (!cfg.slackSocketConfigured) {
-    if (cfg.slackConfigured) {
+    if (cfg.slackBotConfigured) {
       console.info(
-        "[relay] Slack Socket Mode skipped: set SLACK_APP_TOKEN to receive @mentions",
+        "[relay] Slack Socket Mode skipped: set SLACK_APP_TOKEN to receive events",
       );
     }
     return;

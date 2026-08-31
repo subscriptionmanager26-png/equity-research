@@ -6,15 +6,44 @@ import { getConfig } from "@/lib/config";
 import { updateStore } from "@/lib/store";
 import type { JobFile, SlackInboundEvent } from "@/lib/types";
 
-let client: WebClient | undefined;
+let botClient: WebClient | undefined;
+let userClient: WebClient | undefined;
+
+export function getSlackAuthToken() {
+  const { slackApiToken } = getConfig();
+  if (!slackApiToken) {
+    throw new Error("Set SLACK_BOT_TOKEN or SLACK_USER_TOKEN");
+  }
+  return slackApiToken;
+}
 
 export function getSlackClient() {
-  const { slackBotToken } = getConfig();
-  if (!slackBotToken) {
-    throw new Error("SLACK_BOT_TOKEN is not set");
+  const cfg = getConfig();
+  if (cfg.slackBotToken) {
+    botClient ??= new WebClient(cfg.slackBotToken);
+    return botClient;
   }
-  client ??= new WebClient(slackBotToken);
-  return client;
+  if (cfg.slackUserToken) {
+    userClient ??= new WebClient(cfg.slackUserToken);
+    return userClient;
+  }
+  throw new Error("Set SLACK_BOT_TOKEN or SLACK_USER_TOKEN");
+}
+
+export function relayActorLabel() {
+  const { slackTriggerWord } = getConfig();
+  return `@${slackTriggerWord}`;
+}
+
+export function messageTriggersRelay(text: string) {
+  const cfg = getConfig();
+  const body = text ?? "";
+  if (cfg.slackMentionUserId && body.includes(`<@${cfg.slackMentionUserId}>`)) {
+    return true;
+  }
+  const stripped = stripSlackMentions(body);
+  const word = cfg.slackTriggerWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`@?${word}\\b`, "i").test(stripped);
 }
 
 export async function getSlackBotIdentity() {
@@ -104,7 +133,7 @@ export async function fetchThreadContext(input: {
     if (!text) continue;
     const speaker =
       message.user === bot.userId
-        ? "Pocketedge"
+        ? relayActorLabel()
         : message.user
           ? `User ${message.user}`
           : "Someone";

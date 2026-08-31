@@ -48,28 +48,21 @@ To use a **channel or group**, add the bot as an **admin** (it must be allowed t
 
 Relay ignores channel posts that do not mention the bot, so the channel does not trigger a Cursor run on every message.
 
-## Slack (@pocketedge)
+## Slack (trigger word: `pocketedge`)
 
-Relay listens for **@pocketedge** mentions and replies in the **same thread**.
+There is **no Slack app named "Pocketedge"**. Relay watches for the word **`pocketedge`** in messages (change with `SLACK_TRIGGER_WORD`). Example:
 
-1. Create a Slack app and install it to your workspace.
-2. Enable **Socket Mode** and copy `SLACK_BOT_TOKEN` (`xoxb-…`) and `SLACK_APP_TOKEN` (`xapp-…`) into `.env.local`.
-3. Under **Event Subscriptions**, subscribe to:
-   - `app_mention`
-   - `message.channels`, `message.groups`, `message.im`, `message.mpim` (for thread follow-ups)
-4. Bot token scopes (minimum):
-   - `app_mentions:read`
-   - `channels:history`, `channels:read`, `groups:history`, `groups:read`
-   - `chat:write`, `files:write`
-   - `im:history`, `mpim:history`
-   - `users:read`
-5. Invite `@pocketedge` to the channels where you want to use it.
+```
+@pocketedge summarize today's standup
+```
 
-**Thread context:** the first `@pocketedge` mention starts a thread job. Later replies in that thread (without tagging again) are treated as follow-ups. Relay fetches the thread history and sends it to Cursor as `thread_context`.
+Thread replies in the same conversation are treated as follow-ups without saying `pocketedge` again.
 
-For production without Socket Mode, set `SLACK_SIGNING_SECRET` and point Slack Events to `https://your-host/api/slack/events`.
+**Quick start:** set `SLACK_USER_TOKEN` (`xoxp-…`) in `.env.local` — see [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for scopes and step-by-step help.
 
-Set `PUBLIC_URL` if Slack messages include file attachments you want Cursor to download.
+**Production:** create a Slack app and set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (Socket Mode). Full instructions in [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
+
+Slack and Telegram stay fully separate — answers never cross platforms.
 
 ## How the agent replies
 

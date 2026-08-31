@@ -28,7 +28,7 @@ export async function ingestAndDispatch(input: {
   files?: Job["files"];
 }): Promise<Job> {
   const cfg = getConfig();
-  const fallback = await latestChat();
+  const fallback = input.source === "dashboard" ? await latestChat() : undefined;
   const envChatId = cfg.telegramChatId ? Number(cfg.telegramChatId) : undefined;
   const chatId = resolveJobChatId({
     source: input.source,
@@ -39,8 +39,12 @@ export async function ingestAndDispatch(input: {
   const job = await createJob({
     ...input,
     chatId,
-    username: input.username ?? fallback?.username,
-    displayName: input.displayName ?? fallback?.displayName,
+    username:
+      input.username ??
+      (input.source === "dashboard" ? fallback?.username : undefined),
+    displayName:
+      input.displayName ??
+      (input.source === "dashboard" ? fallback?.displayName : undefined),
   });
 
   try {

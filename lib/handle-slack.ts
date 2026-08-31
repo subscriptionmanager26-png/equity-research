@@ -1,4 +1,5 @@
 import { ingestAndDispatch } from "@/lib/relay";
+import { getConfig } from "@/lib/config";
 import { getSlackThread, rememberSlackThread } from "@/lib/jobs";
 import {
   attachmentsFromSlackEvent,
@@ -40,7 +41,7 @@ async function handleMention(event: SlackInboundEvent) {
     await sendSlackMessage({
       channelId: event.channel,
       threadTs,
-      text: "Mention me with a question, or attach a file in the same message.",
+      text: `Include @${getConfig().slackTriggerWord} with a question, or attach a file in the same message.`,
     }).catch(() => undefined);
     return { ignored: true, reason: "empty" };
   }

@@ -28,7 +28,11 @@ type StatusPayload = {
   cursorConfigured: boolean;
   telegramConfigured: boolean;
   slackConfigured: boolean;
+  slackBotConfigured: boolean;
+  slackUserConfigured: boolean;
   slackSocketConfigured: boolean;
+  slackUserPollConfigured: boolean;
+  slackTriggerWord: string;
   replyConfigured: boolean;
   publicUrlSet: boolean;
   telegramChatIdSet: boolean;
@@ -200,9 +204,7 @@ export function Dashboard() {
             Relay
           </h1>
           <p className="max-w-xl text-sm leading-6 text-zinc-400">
-            Message your Telegram bot or mention @pocketedge in Slack. Relay
-            posts to your Cursor automation, waits for the run to finish, and
-            replies in the same chat or thread.
+            Message your Telegram bot or include <code className="font-mono text-[12px] text-sky-200">@{status?.slackTriggerWord ?? "pocketedge"}</code> in Slack. Relay posts to Cursor and replies in the same chat or thread.
           </p>
         </div>
         <a
@@ -250,17 +252,21 @@ export function Dashboard() {
           }
         />
         <StatusCard
-          title="Slack @pocketedge"
-          ok={Boolean(status?.slackSocketConfigured || status?.slackConfigured)}
-          warn={Boolean(status?.slackConfigured && !status.slackSocketConfigured)}
+          title="Slack trigger"
+          ok={Boolean(status?.slackSocketConfigured || status?.slackUserPollConfigured)}
+          warn={Boolean(status?.slackBotConfigured && !status.slackSocketConfigured)}
           detail={
-            status?.slackSocketConfigured
-              ? status.slackBot?.name
-                ? `${status.slackBot.name} listening via Socket Mode`
-                : "Socket Mode connected — mention @pocketedge in a channel."
-              : status?.slackConfigured
-                ? "Bot token set. Add SLACK_APP_TOKEN for Socket Mode, or register /api/slack/events."
-                : "Set SLACK_BOT_TOKEN and SLACK_APP_TOKEN to trigger from Slack."
+            status?.slackUserPollConfigured
+              ? `User token polling for @${status.slackTriggerWord} in joined channels`
+              : status?.slackSocketConfigured
+                ? status.slackBot?.name
+                  ? `${status.slackBot.name} listening via Socket Mode (@${status.slackTriggerWord})`
+                  : `Socket Mode connected — use @${status.slackTriggerWord} in a channel`
+                : status?.slackBotConfigured
+                  ? "Bot token set. Add SLACK_APP_TOKEN for Socket Mode."
+                  : status?.slackUserConfigured
+                    ? "User token set but auth failed — check scopes and rotate the token."
+                    : `Set SLACK_USER_TOKEN (quick start) or SLACK_BOT_TOKEN + SLACK_APP_TOKEN`
           }
         />
         <StatusCard

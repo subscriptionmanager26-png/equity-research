@@ -15,7 +15,9 @@ export async function resolveJobFileUrl(job: Job, file: JobFile) {
 }
 
 async function cacheRemoteFile(jobId: string, file: JobFile) {
-  const { slackBotToken, publicUrl } = getConfig();
+  const { publicUrl } = getConfig();
+  const { getSlackAuthToken } = await import("@/lib/slack");
+  const token = getSlackAuthToken();
   if (!file.url) throw new Error("Missing file URL");
 
   const dir = path.join(ATTACHMENTS_DIR, jobId);
@@ -24,9 +26,7 @@ async function cacheRemoteFile(jobId: string, file: JobFile) {
   const target = path.join(dir, safeName);
 
   const response = await fetch(file.url, {
-    headers: slackBotToken
-      ? { Authorization: `Bearer ${slackBotToken}` }
-      : undefined,
+    headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) {
     throw new Error(`Could not download ${file.name}: HTTP ${response.status}`);

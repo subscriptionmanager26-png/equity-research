@@ -11,6 +11,8 @@ const emptyStore = (): StoreData => ({
   chats: [],
   slackThreads: {},
   processedSlackEvents: [],
+  slackPollCursors: {},
+  processedSlackMessages: [],
 });
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -36,6 +38,8 @@ async function readStore(): Promise<StoreData> {
       inbound: parsed.inbound ?? [],
       bot: parsed.bot,
       slackBot: parsed.slackBot,
+      slackPollCursors: parsed.slackPollCursors ?? {},
+      processedSlackMessages: parsed.processedSlackMessages ?? [],
       telegramOffset: parsed.telegramOffset,
     };
   } catch {

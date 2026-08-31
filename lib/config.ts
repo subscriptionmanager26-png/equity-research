@@ -14,8 +14,17 @@ export function getConfig() {
     process.env.CURSOR_STATUS_WEBHOOK_SECRET,
   );
   const slackBotToken = trim(process.env.SLACK_BOT_TOKEN);
+  const slackUserToken = trim(process.env.SLACK_USER_TOKEN);
   const slackAppToken = trim(process.env.SLACK_APP_TOKEN);
   const slackSigningSecret = trim(process.env.SLACK_SIGNING_SECRET);
+  const slackTriggerWord = trim(process.env.SLACK_TRIGGER_WORD) || "pocketedge";
+  const slackMentionUserId = trim(process.env.SLACK_MENTION_USER_ID);
+  const slackChannelIds = trim(process.env.SLACK_CHANNEL_IDS)
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  const slackApiToken = slackBotToken || slackUserToken;
 
   return {
     cursorWebhookUrl,
@@ -27,12 +36,22 @@ export function getConfig() {
     publicUrl,
     cursorStatusWebhookSecret,
     slackBotToken,
+    slackUserToken,
     slackAppToken,
     slackSigningSecret,
+    slackTriggerWord,
+    slackMentionUserId,
+    slackChannelIds,
+    slackApiToken,
     cursorConfigured: Boolean(cursorWebhookUrl && cursorWebhookToken),
     telegramConfigured: Boolean(telegramBotToken),
-    slackConfigured: Boolean(slackBotToken),
+    slackConfigured: Boolean(slackApiToken),
+    slackBotConfigured: Boolean(slackBotToken),
+    slackUserConfigured: Boolean(slackUserToken),
     slackSocketConfigured: Boolean(slackBotToken && slackAppToken),
+    slackUserPollConfigured: Boolean(
+      slackUserToken && !(slackBotToken && slackAppToken),
+    ),
     replyConfigured: Boolean(replyWebhookSecret),
   };
 }
@@ -43,7 +62,11 @@ export function publicStatus() {
     cursorConfigured: cfg.cursorConfigured,
     telegramConfigured: cfg.telegramConfigured,
     slackConfigured: cfg.slackConfigured,
+    slackBotConfigured: cfg.slackBotConfigured,
+    slackUserConfigured: cfg.slackUserConfigured,
     slackSocketConfigured: cfg.slackSocketConfigured,
+    slackUserPollConfigured: cfg.slackUserPollConfigured,
+    slackTriggerWord: cfg.slackTriggerWord,
     replyConfigured: cfg.replyConfigured,
     publicUrlSet: Boolean(cfg.publicUrl),
     telegramChatIdSet: Boolean(cfg.telegramChatId),

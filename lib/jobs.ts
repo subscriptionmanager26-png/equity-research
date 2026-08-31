@@ -174,6 +174,28 @@ export async function markSlackEventProcessed(eventId: string): Promise<boolean>
   });
 }
 
+export async function markSlackMessageProcessed(messageKey: string): Promise<boolean> {
+  return updateStore((data) => {
+    data.processedSlackMessages = data.processedSlackMessages ?? [];
+    if (data.processedSlackMessages.includes(messageKey)) return false;
+    data.processedSlackMessages.unshift(messageKey);
+    data.processedSlackMessages = data.processedSlackMessages.slice(0, 2000);
+    return true;
+  });
+}
+
+export async function getSlackPollCursor(channelId: string) {
+  const data = await getStore();
+  return data.slackPollCursors?.[channelId];
+}
+
+export async function setSlackPollCursor(channelId: string, ts: string) {
+  await updateStore((data) => {
+    data.slackPollCursors = data.slackPollCursors ?? {};
+    data.slackPollCursors[channelId] = ts;
+  });
+}
+
 function rememberSlackThreadInStore(
   data: {
     slackThreads?: Record<string, SlackThreadRef>;
