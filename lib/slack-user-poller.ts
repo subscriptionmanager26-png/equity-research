@@ -45,6 +45,7 @@ export async function startSlackUserPoller() {
 async function loop(actorUserId: string) {
   while (true) {
     try {
+      await pollDirectMessages(actorUserId);
       await pollSearchTriggers(actorUserId);
       await pollTrackedThreads(actorUserId);
       await pollConfiguredChannels(actorUserId);
@@ -52,6 +53,35 @@ async function loop(actorUserId: string) {
       console.error("[relay] Slack user poll failed", error);
     }
     await sleep(POLL_MS);
+  }
+}
+
+/** Direct messages and group DMs you are already in. */
+async function pollDirectMessages(actorUserId: string) {
+  const client = getSlackClient();
+  let channels: string[] = [];
+  try {
+    const result = await client.users.conversations({
+      types: "im,mpim",
+      exclude_archived: true,
+      limit: 50,
+    });
+    if (result.ok && result.channels?.length) {
+      channels = result.channels
+        .map((channel) => channel.id)
+        .filter((id): id is string => Boolean(id));
+    }
+  } catch (error) {
+    const missing = readMissingScope(error);
+    if (missing) {
+      console.warn(
+        `[relay] Slack DMs need scope ${missing}. Add im:history and im:read on the user token.`,
+      );
+    }
+    return;
+  }
+  for (const channelId of channels) {
+    await pollChannel(channelId, actorUserId);
   }
 }
 
@@ -77,7 +107,8 @@ async function pollSearchTriggers(actorUserId: string) {
     for (const match of ordered) {
       if (!match.ts || !match.user || !match.channel?.id) continue;
       if (Number(match.ts) <= Number(cursor)) continue;
-      if (match.user === actorUserId) continue;
+      const text = match.text ?? "";
+      if (match.user === actorUserId && !messageTriggersRelay(text)) continue;
 
       newestTs = match.ts;
       await processMessage(
@@ -231,7 +262,9 @@ async function pollChannel(channelId: string, actorUserId: string) {
 async function processMessage(event: SlackInboundEvent, actorUserId: string) {
   const key = `${event.channel}:${event.ts}`;
   if (!(await markSlackMessageProcessed(key))) return;
-  if (isSlackBotMessage(event, actorUserId)) return;
+  const ownMessage = event.user === actorUserId;
+  if (ownMessage && !messageTriggersRelay(event.text ?? "")) return;
+  if (!ownMessage && isSlackBotMessage(event, actorUserId)) return;
   if (shouldIgnoreSlackSubtype(event.subtype)) return;
 
   await handleSlackEvent(event).catch((error) => {

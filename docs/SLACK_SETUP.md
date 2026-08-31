@@ -27,8 +27,10 @@ At [api.slack.com/apps](https://api.slack.com/apps) → your app → **OAuth & P
 
 | Scope | Why |
 | --- | --- |
-| `search:read` | Find `pocketedge` anywhere you can read (no channel invites) |
-| `channels:history`, `groups:history` | Read thread context |
+| `search:read` | Find `pocketedge` in channels and DMs you can read |
+| `channels:history`, `groups:history` | Read thread context in channels |
+| `im:history`, `im:read` | Direct messages (1:1 DMs) |
+| `mpim:history` | Group DMs |
 | `channels:read`, `groups:read` | Resolve channels |
 | `chat:write` | Post replies **as you** |
 | `files:write` | Send PDFs/attachments |
@@ -85,3 +87,15 @@ Can you also add risks?
 If you pasted a token in chat, revoke it at api.slack.com → OAuth & Permissions → Revoke, then generate a new one.
 
 Telegram and Slack stay fully separate — answers never cross platforms.
+
+---
+
+## Direct messages (DMs)
+
+**Yes — DMs work**, with the user token (`xoxp-`):
+
+- Someone DMs you: `@pocketedge summarize this` → Relay triggers and replies in that DM **as you**
+- You start a DM: send `@pocketedge …` to a coworker (or yourself) → Relay triggers on your message too
+- Thread replies in a DM work the same as channels (follow-ups without `pocketedge`)
+
+Make sure the user token has `im:history`, `im:read`, and `search:read`. No bot invite is needed for DMs you are already in.
