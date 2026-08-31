@@ -58,15 +58,56 @@ async function listWatchChannels() {
   if (cfg.slackChannelIds.length) return cfg.slackChannelIds;
 
   const client = getSlackClient();
-  const result = await client.users.conversations({
-    types: "public_channel,private_channel",
-    exclude_archived: true,
-    limit: 50,
-  });
-  if (!result.ok || !result.channels?.length) return [];
-  return result.channels
-    .map((channel) => channel.id)
-    .filter((id): id is string => Boolean(id));
+  try {
+    const result = await client.users.conversations({
+      types: "public_channel,private_channel",
+      exclude_archived: true,
+      limit: 50,
+    });
+    if (result.ok && result.channels?.length) {
+      return result.channels
+        .map((channel) => channel.id)
+        .filter((id): id is string => Boolean(id));
+    }
+  } catch (error) {
+    const missing = readMissingScope(error);
+    if (missing) {
+      console.warn(
+        `[relay] Slack user token missing scope ${missing}. Add it at api.slack.com/apps, or set SLACK_CHANNEL_IDS. See docs/SLACK_SETUP.md`,
+      );
+    }
+  }
+
+  try {
+    const fallback = await client.conversations.list({
+      types: "public_channel",
+      exclude_archived: true,
+      limit: 50,
+    });
+    if (fallback.ok && fallback.channels?.length) {
+      return fallback.channels
+        .map((channel) => channel.id)
+        .filter((id): id is string => Boolean(id));
+    }
+  } catch (error) {
+    console.error("[relay] Slack channel list failed", error);
+  }
+  return [];
+}
+
+function readMissingScope(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "data" in error &&
+    error.data &&
+    typeof error.data === "object" &&
+    "needed" in error.data &&
+    typeof error.data.needed === "string"
+  ) {
+    return error.data.needed;
+  }
+  return undefined;
 }
 
 async function pollChannel(channelId: string, actorUserId: string) {
