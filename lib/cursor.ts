@@ -1,4 +1,5 @@
 import { getConfig } from "@/lib/config";
+import { telegramFileUrl } from "@/lib/telegram";
 import type { Job } from "@/lib/types";
 
 export function replyUrl() {
@@ -7,7 +8,17 @@ export function replyUrl() {
   return publicUrl ? `${publicUrl}${path}` : path;
 }
 
-export function buildCursorPayload(job: Job) {
+export async function buildCursorPayload(job: Job) {
+  const files = [];
+  for (const file of job.files ?? []) {
+    files.push({
+      name: file.name,
+      mime: file.mime,
+      size: file.size,
+      url: await telegramFileUrl(file.fileId),
+    });
+  }
+
   return {
     source: job.source,
     job_id: job.id,
@@ -15,8 +26,10 @@ export function buildCursorPayload(job: Job) {
     username: job.username,
     from: job.displayName,
     text: job.prompt,
-    instructions:
-      "Answer the user's text. Do not POST to Telegram, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, reply_url, or Telegram. Relay copies your final answer to the user automatically.",
+    files: files.length ? files : undefined,
+    instructions: files.length
+      ? "Answer the user's text. Download each files[].url immediately (they expire in about an hour) and use those files. Do not POST to Telegram, Relay, or any other URL. Do not mention delivery, webhooks, or Telegram. Relay copies your final answer to the user automatically."
+      : "Answer the user's text. Do not POST to Telegram, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, reply_url, or Telegram. Relay copies your final answer to the user automatically.",
   };
 }
 
@@ -26,7 +39,7 @@ export async function dispatchToCursor(job: Job) {
     throw new Error("Cursor webhook URL or token is not configured");
   }
 
-  const payload = buildCursorPayload(job);
+  const payload = await buildCursorPayload(job);
   const response = await fetch(cursorWebhookUrl, {
     method: "POST",
     headers: {

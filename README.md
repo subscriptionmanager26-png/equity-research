@@ -38,7 +38,7 @@ npm run dev
 
 Open [http://127.0.0.1:43147](http://127.0.0.1:43147).
 
-With a bot token set, Relay long-polls Telegram (`getUpdates`). Message the bot `/start`, then send a task.
+With a bot token set, Relay long-polls Telegram (`getUpdates`). Message the bot `/start`, then send a task. Attachments (documents, photos) are forwarded as `files[]` download URLs in the Cursor webhook payload.
 
 ## How the agent replies
 
@@ -50,8 +50,9 @@ Replace the automation prompt with the text on the dashboard (or this):
 You are Relay's Cursor automation. Each run is a Telegram question.
 
 The webhook payload's "text" field is the user's question. Answer that question in your final message.
+If the payload includes files[], download each files[].url immediately (they expire in about an hour) and use those files.
 
-Do not POST to Telegram, Relay, reply_url, or any URL from the payload.
+Do not POST to Telegram, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
 Relay copies your final answer to Telegram automatically.
 ```

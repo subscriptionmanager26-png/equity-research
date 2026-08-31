@@ -12,6 +12,13 @@ export type JobEvent = {
   detail: string;
 };
 
+export type JobFile = {
+  fileId: string;
+  name: string;
+  mime?: string;
+  size?: number;
+};
+
 export type JobReply = {
   message: string;
   status: string;
@@ -28,6 +35,7 @@ export type Job = {
   username?: string;
   displayName?: string;
   prompt: string;
+  files?: JobFile[];
   status: JobStatus;
   cursorHttpStatus?: number;
   cursorBody?: unknown;
@@ -63,4 +71,5 @@ export type InboundMessage = {
   chatId: number;
   text?: string;
   kind: string;
+  files?: string[];
 };

@@ -19,6 +19,7 @@ export async function ingestAndDispatch(input: {
   chatId?: number;
   username?: string;
   displayName?: string;
+  files?: Job["files"];
 }): Promise<Job> {
   const cfg = getConfig();
   const fallback = await latestChat();

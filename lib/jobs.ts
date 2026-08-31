@@ -13,6 +13,7 @@ export async function createJob(input: {
   chatId?: number;
   username?: string;
   displayName?: string;
+  files?: Job["files"];
 }): Promise<Job> {
   const now = new Date().toISOString();
   const job: Job = {
@@ -24,12 +25,15 @@ export async function createJob(input: {
     username: input.username,
     displayName: input.displayName,
     prompt: input.prompt,
+    files: input.files,
     status: "queued",
     events: [
       {
         at: now,
         type: "created",
-        detail: `Received from ${input.source}`,
+        detail: input.files?.length
+          ? `Received from ${input.source} with ${input.files.length} file(s)`
+          : `Received from ${input.source}`,
       },
     ],
   };

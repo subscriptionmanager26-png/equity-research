@@ -1,5 +1,6 @@
 import { getConfig } from "@/lib/config";
 import { updateStore } from "@/lib/store";
+import type { JobFile } from "@/lib/types";
 
 const TELEGRAM_API = "https://api.telegram.org";
 
@@ -20,12 +21,33 @@ export type TelegramChat = {
   last_name?: string;
 };
 
+export type TelegramDocument = {
+  file_id: string;
+  file_unique_id?: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+};
+
+export type TelegramPhotoSize = {
+  file_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+};
+
 export type TelegramMessage = {
   message_id: number;
   from?: TelegramUser;
   chat: TelegramChat;
   date: number;
   text?: string;
+  caption?: string;
+  document?: TelegramDocument;
+  photo?: TelegramPhotoSize[];
+  audio?: TelegramDocument & { title?: string };
+  video?: TelegramDocument;
+  voice?: { file_id: string; mime_type?: string; file_size?: number };
 };
 
 export type TelegramUpdate = {
@@ -148,6 +170,65 @@ export async function getWebhookInfo() {
     last_error_date?: number;
     last_error_message?: string;
   }>("getWebhookInfo");
+}
+
+export function attachmentsFromMessage(message: TelegramMessage): JobFile[] {
+  const files: JobFile[] = [];
+  if (message.document) {
+    files.push({
+      fileId: message.document.file_id,
+      name: message.document.file_name ?? "document",
+      mime: message.document.mime_type,
+      size: message.document.file_size,
+    });
+  }
+  if (message.photo?.length) {
+    const largest = message.photo.reduce((best, item) =>
+      item.width * item.height > best.width * best.height ? item : best,
+    );
+    files.push({
+      fileId: largest.file_id,
+      name: "photo.jpg",
+      mime: "image/jpeg",
+      size: largest.file_size,
+    });
+  }
+  if (message.audio) {
+    files.push({
+      fileId: message.audio.file_id,
+      name: message.audio.file_name ?? message.audio.title ?? "audio",
+      mime: message.audio.mime_type,
+      size: message.audio.file_size,
+    });
+  }
+  if (message.video) {
+    files.push({
+      fileId: message.video.file_id,
+      name: message.video.file_name ?? "video",
+      mime: message.video.mime_type,
+      size: message.video.file_size,
+    });
+  }
+  if (message.voice) {
+    files.push({
+      fileId: message.voice.file_id,
+      name: "voice.ogg",
+      mime: message.voice.mime_type,
+      size: message.voice.file_size,
+    });
+  }
+  return files;
+}
+
+export async function telegramFileUrl(fileId: string): Promise<string> {
+  const result = await telegramCall<{ file_path: string }>("getFile", {
+    file_id: fileId,
+  });
+  if (!result.ok || !result.result?.file_path) {
+    throw new Error(result.description ?? "Telegram getFile failed");
+  }
+  const { telegramBotToken } = getConfig();
+  return `${TELEGRAM_API}/file/bot${telegramBotToken}/${result.result.file_path}`;
 }
 
 function splitTelegramText(text: string, limit = 3900): string[] {
