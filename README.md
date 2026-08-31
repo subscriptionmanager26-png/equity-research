@@ -10,10 +10,12 @@ Cursor does not have a place to talk back on Telegram. Relay is that missing ret
 
 ```
 Telegram message  →  Relay  →  Cursor automation webhook
-Cursor agent      →  Telegram sendMessage  →  you
+Relay polls Cursor until the run finishes
+Relay  →  Telegram sendMessage  →  you
 ```
 
 The dashboard can send the same payload without typing in Telegram.
+Relay does not depend on the cloud agent calling Telegram itself.
 
 ## What you need
 
@@ -40,21 +42,19 @@ With a bot token set, Relay long-polls Telegram (`getUpdates`). Message the bot 
 
 ## How the agent replies
 
-Each Cursor payload includes `telegram.send_message_url` and `chat_id`. The agent should POST:
+Relay polls the Cursor run and sends the last answer to Telegram. The automation should **not** POST to Telegram or to `/api/reply`.
+
+Replace the automation prompt with the text on the dashboard (or this):
 
 ```
-POST https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/sendMessage
-Content-Type: application/json
+You are Relay's Cursor automation. Each run is a Telegram question.
 
-{
-  "chat_id": 123456,
-  "text": "The answer that should appear in Telegram"
-}
+The webhook payload's "text" field is the user's question. Answer that question in your final message.
+
+Do not POST to Telegram, Relay, reply_url, or any URL from the payload.
+Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
+Relay copies your final answer to Telegram automatically.
 ```
-
-Paste the prompt from the dashboard into the automation instructions so the agent always does this.
-
-Optional: if `PUBLIC_URL` is set, the agent can also POST to `/api/reply` with `Authorization: Bearer <REPLY_WEBHOOK_SECRET>`.
 
 Optional: point Cursor cloud-agent **statusChange** webhooks at `/api/cursor/status`. If `CURSOR_STATUS_WEBHOOK_SECRET` is set, Relay verifies `X-Webhook-Signature`.
 

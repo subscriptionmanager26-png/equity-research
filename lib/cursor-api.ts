@@ -67,10 +67,31 @@ export async function getAgentAnswer(agentId: string): Promise<string | undefine
 }
 
 export function cleanAgentAnswer(text: string) {
-  return text
-    .replace(/\n+I could not send this to Telegram[\s\S]*$/i, "")
-    .replace(/\n+The webhook is missing[\s\S]*$/i, "")
-    .trim();
+  const sections = text.split(/\n-{3,}\n/);
+  const kept = sections.filter((section) => !isDeliveryNote(section));
+  let cleaned = (kept.length ? kept : sections).join("\n\n").trim();
+  cleaned = cleaned.replace(
+    /(?:\n+)?(?:\*\*)?(?:Delivery(?: to Telegram)?(?: note)?|I did not post to Telegram|Could not POST this back)[\s\S]*$/i,
+    "",
+  );
+  cleaned = cleaned.replace(
+    /\s*Delivery to Telegram could not be completed:[\s\S]*?(?=\n\n|\n---|$)/gi,
+    "",
+  );
+  return cleaned.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function isDeliveryNote(section: string) {
+  const value = section.toLowerCase();
+  return (
+    value.includes("reply_url") ||
+    value.includes("reply_token") ||
+    value.includes("did not post to telegram") ||
+    value.includes("could not post this back") ||
+    value.includes("delivery to telegram") ||
+    value.includes("bot api instead") ||
+    value.includes("configured relay destination")
+  );
 }
 
 export function agentIsDone(status?: string) {

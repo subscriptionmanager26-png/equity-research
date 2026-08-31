@@ -21,7 +21,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import type { Job } from "@/lib/types";
 
@@ -42,20 +41,13 @@ type StatusPayload = {
   jobCount: number;
 };
 
-const AUTOMATION_PROMPT = `You are triggered by Relay. The webhook payload includes the user's text, chat_id, and telegram.send_message_url.
+const AUTOMATION_PROMPT = `You are Relay's Cursor automation. Each run is a Telegram question.
 
-When you have an answer, POST immediately to Telegram (this is how the user sees the reply):
+The webhook payload's "text" field is the user's question. Answer that question in your final message.
 
-POST {telegram.send_message_url}
-Content-Type: application/json
-
-{
-  "chat_id": {chat_id},
-  "text": "<your reply, plain text is fine>"
-}
-
-If you fail, still send a short error to that same chat_id.
-If reply_url is an https URL, you may also POST { job_id, status, message } there with Authorization: Bearer {reply_token}. Never block on that. Always reply on Telegram.`;
+Do not POST to Telegram, Relay, reply_url, or any URL from the payload.
+Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
+Relay copies your final answer to Telegram automatically.`;
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -327,24 +319,16 @@ export function Dashboard() {
 
           <Card className="border-white/5 bg-zinc-950/60 ring-white/10">
             <CardHeader>
-              <CardTitle>How the agent replies</CardTitle>
+              <CardTitle>Automation prompt</CardTitle>
               <CardDescription>
-                Cursor posts straight to Telegram. No public URL required.
+                Paste this into the Cursor automation. Relay delivers the
+                answer; the agent should only write it.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <CodeRow
-                label="Telegram"
-                value="POST https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/sendMessage"
-              />
-              <CodeRow
-                label="Body"
-                value='{ "chat_id": <linked chat>, "text": "<answer>" }'
-              />
-              <Separator />
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-zinc-200">
-                  Paste into the automation prompt
+                  Paste into cursor.com/automations
                 </p>
                 <CopyButton value={AUTOMATION_PROMPT} label="Copy prompt" />
               </div>
@@ -444,20 +428,6 @@ function StatusCard({
         {title}
       </div>
       <p className="mt-1 text-xs leading-5 text-zinc-500">{detail}</p>
-    </div>
-  );
-}
-
-function CodeRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-lg bg-black/40 px-3 py-2">
-      <div className="min-w-0">
-        <p className="text-[10px] tracking-wide text-zinc-500 uppercase">
-          {label}
-        </p>
-        <p className="truncate font-mono text-xs text-sky-100">{value || "…"}</p>
-      </div>
-      <CopyButton value={value} />
     </div>
   );
 }
