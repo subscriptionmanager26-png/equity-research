@@ -1,30 +1,50 @@
 import { getConfig } from "@/lib/config";
 import { ingestAndDispatch } from "@/lib/relay";
 import { logInbound, rememberChat } from "@/lib/jobs";
+import { getStore } from "@/lib/store";
 import {
   attachmentsFromMessage,
   displayName,
+  getMe,
+  isAddressedToBot,
+  isPrivateChat,
   sendTelegramMessage,
+  stripBotMention,
   type TelegramMessage,
 } from "@/lib/telegram";
 
+async function botIdentity() {
+  const stored = (await getStore()).bot;
+  if (stored?.username || stored?.id) return stored;
+  return getMe();
+}
+
 export async function handleTelegramMessage(message: TelegramMessage) {
-  const text = (message.text ?? message.caption)?.trim();
+  const bot = await botIdentity();
+  const rawText = (message.text ?? message.caption)?.trim();
+  const text = stripBotMention(rawText ?? "", bot.username);
   const files = attachmentsFromMessage(message);
   const chatId = message.chat.id;
   const name = displayName(message.from, message.chat);
+  const privateChat = isPrivateChat(message);
+
+  if (!privateChat && !isAddressedToBot(message, bot)) {
+    return { ignored: true };
+  }
 
   await rememberChat({
     chatId,
-    username: message.from?.username,
-    displayName: name,
+    username: message.chat.username ?? message.from?.username,
+    displayName: message.chat.title ?? name,
   });
 
   if (!text && files.length === 0) {
     await logInbound({ chatId, kind: "non-text" });
     await sendTelegramMessage({
       chatId,
-      text: "Send a text message, or a file with a caption, and I will hand it to your Cursor agent.",
+      text: privateChat
+        ? "Send a text message, or a file with a caption, and I will hand it to your Cursor agent."
+        : "Tag me with a task, or attach a file and mention me in the caption.",
       replyToMessageId: message.message_id,
     }).catch(() => undefined);
     return { ignored: true };
@@ -33,16 +53,18 @@ export async function handleTelegramMessage(message: TelegramMessage) {
   if (text === "/start" || text === "/help") {
     await logInbound({ chatId, text, kind: "command" });
     const { cursorConfigured } = getConfig();
+    const handle = bot.username ? `@${bot.username}` : "me";
     await sendTelegramMessage({
       chatId,
       text: [
-        `Hi ${name}. I am Relay, and this chat is linked.`,
-        "Send a task in plain text, or attach a file with a caption.",
-        "I post it to your Cursor automation, and the agent replies here on Telegram.",
+        `Hi ${name}. I am Relay.`,
+        privateChat
+          ? "Send a task in plain text, or attach a file with a caption."
+          : `In this channel, tag ${handle} with the task. I only run when mentioned.`,
+        "I post it to your Cursor automation, and the agent replies here.",
         cursorConfigured
           ? "Cursor webhook: configured."
           : "Cursor webhook: missing. Set CURSOR_WEBHOOK_URL and CURSOR_WEBHOOK_TOKEN.",
-        "If Cursor says the automation is disabled, turn it on at cursor.com/automations, then send the task again.",
         "Commands: /start, /help",
       ].join("\n"),
     }).catch(() => undefined);
@@ -63,8 +85,8 @@ export async function handleTelegramMessage(message: TelegramMessage) {
   await sendTelegramMessage({
     chatId,
     text: files.length
-      ? `Sent to your Cursor agent with ${files.length} file${files.length === 1 ? "" : "s"}. I will reply here when it finishes.`
-      : "Sent to your Cursor agent. I will reply here when it finishes.",
+      ? `Sent to Cursor with ${files.length} file${files.length === 1 ? "" : "s"}. I will reply here when it finishes.`
+      : "Sent to Cursor. I will reply here when it finishes.",
     replyToMessageId: message.message_id,
   }).catch((error) => {
     console.error("[relay] Telegram ack failed", error);
@@ -75,7 +97,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
       source: "telegram",
       prompt,
       chatId,
-      username: message.from?.username,
+      username: message.from?.username ?? message.chat.username,
       displayName: name,
       files,
     });

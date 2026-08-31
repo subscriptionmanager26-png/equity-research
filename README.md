@@ -40,6 +40,14 @@ Open [http://127.0.0.1:43147](http://127.0.0.1:43147).
 
 With a bot token set, Relay long-polls Telegram (`getUpdates`). Message the bot `/start`, then send a task. Attachments (documents, photos) are forwarded as `files[]` download URLs in the Cursor webhook payload.
 
+To use a **channel or group**, add the bot as an **admin** (it must be allowed to post messages), then tag it:
+
+```
+@open_kush_bot summarize today's thread
+```
+
+Relay ignores channel posts that do not mention the bot, so the channel does not trigger a Cursor run on every message.
+
 ## How the agent replies
 
 Relay polls the Cursor run and sends the last answer to Telegram. Files the agent writes under `artifacts/` (PDF, markdown, images, spreadsheets) are downloaded and sent as Telegram documents. If there are no artifacts and the answer is long, Relay also attaches `report.md`.

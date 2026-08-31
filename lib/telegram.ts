@@ -36,13 +36,24 @@ export type TelegramPhotoSize = {
   file_size?: number;
 };
 
+export type TelegramMessageEntity = {
+  type: string;
+  offset: number;
+  length: number;
+  user?: TelegramUser;
+};
+
 export type TelegramMessage = {
   message_id: number;
   from?: TelegramUser;
+  sender_chat?: TelegramChat;
   chat: TelegramChat;
   date: number;
   text?: string;
   caption?: string;
+  entities?: TelegramMessageEntity[];
+  caption_entities?: TelegramMessageEntity[];
+  reply_to_message?: TelegramMessage;
   document?: TelegramDocument;
   photo?: TelegramPhotoSize[];
   audio?: TelegramDocument & { title?: string };
@@ -54,6 +65,8 @@ export type TelegramUpdate = {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  channel_post?: TelegramMessage;
+  edited_channel_post?: TelegramMessage;
 };
 
 type TelegramApiResult<T> = {
@@ -168,7 +181,7 @@ export async function getUpdates(offset?: number) {
   const result = await telegramCall<TelegramUpdate[]>("getUpdates", {
     offset,
     timeout: 25,
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "channel_post"],
   });
   if (!result.ok) {
     throw new Error(result.description ?? "Telegram getUpdates failed");
@@ -180,7 +193,7 @@ export async function setTelegramWebhook(url: string, secret?: string) {
   return telegramCall("setWebhook", {
     url,
     secret_token: secret || undefined,
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "channel_post"],
     drop_pending_updates: false,
   });
 }
@@ -245,6 +258,60 @@ export function attachmentsFromMessage(message: TelegramMessage): JobFile[] {
     });
   }
   return files;
+}
+
+export function isPrivateChat(message: TelegramMessage) {
+  return message.chat.type === "private";
+}
+
+export function isAddressedToBot(
+  message: TelegramMessage,
+  bot: { id?: number; username?: string },
+) {
+  if (isPrivateChat(message)) return true;
+  const username = bot.username?.replace(/^@/, "").toLowerCase();
+  const body = `${message.text ?? ""} ${message.caption ?? ""}`;
+  if (username && new RegExp(`@${username}\\b`, "i").test(body)) return true;
+
+  const source = message.text ?? message.caption ?? "";
+  const entities = [
+    ...(message.entities ?? []),
+    ...(message.caption_entities ?? []),
+  ];
+  for (const entity of entities) {
+    if (entity.type === "mention" && username) {
+      const slice = source
+        .slice(entity.offset, entity.offset + entity.length)
+        .replace(/^@/, "")
+        .toLowerCase();
+      if (slice === username) return true;
+    }
+    if (entity.type === "text_mention" && bot.id && entity.user?.id === bot.id) {
+      return true;
+    }
+    if (entity.type === "bot_command") return true;
+  }
+
+  const replyFrom = message.reply_to_message?.from;
+  if (
+    replyFrom?.is_bot &&
+    ((bot.id && replyFrom.id === bot.id) ||
+      (username && replyFrom.username?.toLowerCase() === username))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function stripBotMention(text: string, username?: string) {
+  if (!username) return text.trim();
+  const handle = username.replace(/^@/, "");
+  return text
+    .replace(new RegExp(`^/([a-z0-9_]+)@${handle}\\b`, "i"), "/$1")
+    .replace(new RegExp(`@${handle}\\b`, "gi"), "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 export async function telegramFileUrl(fileId: string): Promise<string> {

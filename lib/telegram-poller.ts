@@ -37,7 +37,7 @@ async function loop() {
       const store = await getStore();
       const updates = await getUpdates(store.telegramOffset);
       for (const update of updates) {
-        const message = update.message ?? update.edited_message;
+        const message = update.message ?? update.channel_post;
         try {
           if (message) {
             await handleTelegramMessage(message);
