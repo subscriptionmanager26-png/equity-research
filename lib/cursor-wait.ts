@@ -7,7 +7,7 @@ import {
   getAgentAnswer,
   mimeFromName,
 } from "@/lib/cursor-api";
-import { addJobEvent, listJobs } from "@/lib/jobs";
+import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
 import { deliverReply } from "@/lib/relay";
 
 declare global {
@@ -46,6 +46,7 @@ async function loop() {
 }
 
 async function settleJob(jobId: string, agentId: string, startedAt: number) {
+  const job = await getJob(jobId);
   while (true) {
     if (Date.now() - startedAt > TIMEOUT_MS) {
       await addJobEvent(
@@ -58,6 +59,7 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
       );
       await deliverReply({
         jobId,
+        job,
         status: "error",
         message: `Cursor started (${agentId}) but did not finish in time. Open https://cursor.com/agents/${agentId}`,
       }).catch(() => undefined);
@@ -93,6 +95,7 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
 
       const delivery = await deliverReply({
         jobId,
+        job,
         status: failed ? "error" : "finished",
         message,
         files,

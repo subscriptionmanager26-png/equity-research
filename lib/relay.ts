@@ -11,7 +11,7 @@ import {
   listChats,
 } from "@/lib/jobs";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
-import type { Job, JobSource } from "@/lib/types";
+import type { Job, JobSource, TelegramChat } from "@/lib/types";
 
 export async function ingestAndDispatch(input: {
   source: JobSource;
@@ -24,10 +24,12 @@ export async function ingestAndDispatch(input: {
   const cfg = getConfig();
   const fallback = await latestChat();
   const envChatId = cfg.telegramChatId ? Number(cfg.telegramChatId) : undefined;
-  const chatId =
-    input.chatId ??
-    (Number.isFinite(envChatId) ? envChatId : undefined) ??
-    fallback?.chatId;
+  const chatId = resolveJobChatId({
+    source: input.source,
+    chatId: input.chatId,
+    envChatId: Number.isFinite(envChatId) ? envChatId : undefined,
+    fallbackChatId: fallback?.chatId,
+  });
   const job = await createJob({
     ...input,
     chatId,
@@ -104,15 +106,18 @@ export async function deliverReply(input: {
   files?: { name: string; bytes: Uint8Array; mime?: string }[];
 }) {
   const cfg = getConfig();
+  const job =
+    input.job ?? (input.jobId ? await getJob(input.jobId) : undefined);
   const chats = await listChats();
   const fallbackChat = await latestChat();
   const envChatId = cfg.telegramChatId ? Number(cfg.telegramChatId) : undefined;
-  const chatId =
-    input.chatId ??
-    input.job?.chatId ??
-    (Number.isFinite(envChatId) ? envChatId : undefined) ??
-    fallbackChat?.chatId ??
-    chats[0]?.chatId;
+  const chatId = resolveDeliveryChatId({
+    explicitChatId: input.chatId,
+    job,
+    envChatId: Number.isFinite(envChatId) ? envChatId : undefined,
+    fallbackChat,
+    chats,
+  });
 
   let telegramMessageId: number | undefined;
   const deliveredFiles: string[] = [];
@@ -136,6 +141,32 @@ export async function deliverReply(input: {
   }
 
   return { chatId, telegramMessageId, files: deliveredFiles };
+}
+
+function resolveJobChatId(input: {
+  source: JobSource;
+  chatId?: number;
+  envChatId?: number;
+  fallbackChatId?: number;
+}) {
+  if (input.chatId !== undefined) return input.chatId;
+  if (input.source === "telegram") return undefined;
+  return input.envChatId ?? input.fallbackChatId;
+}
+
+function resolveDeliveryChatId(input: {
+  explicitChatId?: number;
+  job?: Job;
+  envChatId?: number;
+  fallbackChat?: TelegramChat;
+  chats: TelegramChat[];
+}) {
+  if (input.explicitChatId !== undefined) return input.explicitChatId;
+  if (input.job?.chatId !== undefined) return input.job.chatId;
+  if (input.job?.source === "telegram") return undefined;
+  return (
+    input.envChatId ?? input.fallbackChat?.chatId ?? input.chats[0]?.chatId
+  );
 }
 
 function cursorErrorDetail(status: number, body: unknown) {
