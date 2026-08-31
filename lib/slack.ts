@@ -183,7 +183,9 @@ export async function sendSlackFile(input: {
     file: Buffer.from(copy),
   });
   if (!result.ok) {
-    throw new Error("Slack files.upload failed");
+    const detail =
+      typeof result.error === "string" ? result.error : "Slack files.upload failed";
+    throw new Error(detail);
   }
 }
 

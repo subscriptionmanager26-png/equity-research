@@ -1,5 +1,5 @@
 import { getConfig } from "@/lib/config";
-import { resolveJobFileUrl } from "@/lib/attachments";
+import { resolveJobFileForCursor } from "@/lib/attachments";
 import type { Job } from "@/lib/types";
 
 export function replyUrl() {
@@ -16,9 +16,9 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
         ? "Telegram"
         : "the user";
   const fileLine = hasFiles
-    ? " Download each files[].url immediately (they expire in about an hour) and use those files."
+    ? " Download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload."
     : "";
-  const artifactLine = ` If you produce a report or any file the user should receive, write it under artifacts/ (for example artifacts/report.pdf). Relay sends artifacts/ files back to ${channel}.`;
+  const artifactLine = ` If you produce a report or any file the user should receive, you MUST write it under artifacts/ (for example artifacts/report.pdf) using the Write tool or python3 tools/pdf_report.py. Relay only delivers files registered under artifacts/. Verify the file exists before saying it is attached.`;
   const pdfLine =
     " PDF libraries are preinstalled (fpdf2, Pillow, reportlab) — import them, do not pip install.";
   const noPostLine = ` Do not POST to ${channel}, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or ${channel}.`;
@@ -28,12 +28,7 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
 export async function buildCursorPayload(job: Job) {
   const files = [];
   for (const file of job.files ?? []) {
-    files.push({
-      name: file.name,
-      mime: file.mime,
-      size: file.size,
-      url: await resolveJobFileUrl(job, file),
-    });
+    files.push(await resolveJobFileForCursor(job, file));
   }
 
   const text = job.threadContext

@@ -1,11 +1,14 @@
 import {
   agentFailed,
   agentIsDone,
-  collectAgentFiles,
   extractAgentId,
   getAgent,
   getAgentAnswer,
 } from "@/lib/cursor-api";
+import {
+  collectAgentFilesWithRetry,
+  mentionedArtifactsMissing,
+} from "@/lib/artifact-collect";
 import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
 import { deliverReply, deliveryDetail } from "@/lib/relay";
 
@@ -74,15 +77,22 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
 
       const answer = await getAgentAnswer(agentId);
       const failed = agentFailed(agent.status);
-      const files = failed ? [] : await collectAgentFiles(agentId).catch(() => []);
+      const files = failed
+        ? []
+        : await collectAgentFilesWithRetry(agentId, answer).catch(() => []);
       const link = agent.url ?? agent.target?.url ?? `https://cursor.com/agents/${agentId}`;
-      const message =
+      let message =
         answer ||
         (files.length
           ? `Cursor attached ${files.length} file${files.length === 1 ? "" : "s"}.`
           : failed
             ? `Cursor agent ended with ${agent.status}. ${link}`
             : `Cursor finished but did not leave a text answer. ${link}`);
+
+      const missingArtifacts = mentionedArtifactsMissing(answer, files);
+      if (missingArtifacts.length && !failed) {
+        message += `\n\n_Relay could not retrieve ${missingArtifacts.join(", ")} from Cursor — the agent may not have saved them under artifacts/._`;
+      }
 
       const delivery = await deliverReply({
         jobId,

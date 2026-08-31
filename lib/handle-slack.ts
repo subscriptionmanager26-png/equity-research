@@ -31,6 +31,11 @@ async function handleMention(event: SlackInboundEvent) {
   const threadTs = event.thread_ts ?? event.ts;
   const text = stripSlackMentions(event.text ?? "");
   const files = attachmentsFromSlackEvent(event);
+  if (files.length > 0 && !getConfig().publicUrl) {
+    console.info(
+      "[relay] Slack attachment will be inlined for Cursor (no PUBLIC_URL set)",
+    );
+  }
   const threadContext = await fetchThreadContext({
     channelId: event.channel,
     threadTs,

@@ -66,7 +66,9 @@ Slack and Telegram stay fully separate — answers never cross platforms.
 
 ## How the agent replies
 
-Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. Files the agent writes under `artifacts/` are delivered as documents. Answers longer than ~500 characters are sent as `answer.md` instead of a long chat message (short replies stay as plain text).
+Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. Files the agent writes under `artifacts/` are delivered as attachments (PDFs, images, etc.). Answers longer than ~500 characters are sent as `answer.md` instead of a long chat message (short replies stay as plain text).
+
+**Slack attachments:** Relay can send files to Slack with your user token (`files:write`). Slack → Cursor file sharing works via inline base64 when `PUBLIC_URL` is unset, or via download URLs when it is set.
 
 The automation should **not** POST to Telegram, Slack, or `/api/reply`.
 

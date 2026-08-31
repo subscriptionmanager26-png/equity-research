@@ -1,8 +1,8 @@
 import { getConfig } from "@/lib/config";
 
 const API = "https://api.cursor.com";
-const MAX_ARTIFACT_BYTES = 45 * 1024 * 1024;
-const MAX_ARTIFACTS = 8;
+export const MAX_ARTIFACT_BYTES = 45 * 1024 * 1024;
+export const MAX_ARTIFACTS = 8;
 
 function apiToken() {
   return getConfig().cursorWebhookToken;
@@ -49,6 +49,11 @@ export type CursorArtifact = {
   sizeBytes?: number;
 };
 
+export type CursorArtifactV0 = {
+  absolutePath: string;
+  sizeBytes?: number;
+};
+
 export async function listArtifacts(agentId: string): Promise<CursorArtifact[]> {
   const data = await cursorGet<{ items?: CursorArtifact[] }>(
     `/v1/agents/${agentId}/artifacts`,
@@ -56,40 +61,57 @@ export async function listArtifacts(agentId: string): Promise<CursorArtifact[]> 
   return (data.items ?? []).filter((item) => item.path);
 }
 
+export async function listArtifactsV0(agentId: string): Promise<CursorArtifactV0[]> {
+  const data = await cursorGet<{ artifacts?: CursorArtifactV0[] }>(
+    `/v0/agents/${agentId}/artifacts`,
+  );
+  return (data.artifacts ?? []).filter((item) => item.absolutePath);
+}
+
 export async function downloadArtifact(
   agentId: string,
   path: string,
 ): Promise<{ name: string; bytes: Uint8Array; mime: string }> {
-  const encoded = encodeURIComponent(path);
+  const normalized = path.startsWith("artifacts/") ? path : `artifacts/${path}`;
+  const encoded = encodeURIComponent(normalized);
   const data = await cursorGet<{ url?: string }>(
     `/v1/agents/${agentId}/artifacts/download?path=${encoded}`,
   );
   if (!data.url) {
-    throw new Error(`No download URL for ${path}`);
+    throw new Error(`No download URL for ${normalized}`);
   }
   const response = await fetch(data.url, { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`Artifact download HTTP ${response.status} for ${path}`);
+    throw new Error(`Artifact download HTTP ${response.status} for ${normalized}`);
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
-  const name = path.split("/").filter(Boolean).pop() ?? "artifact";
+  const name = normalized.split("/").filter(Boolean).pop() ?? "artifact";
+  return { name, bytes, mime: mimeFromName(name) };
+}
+
+export async function downloadArtifactV0(
+  agentId: string,
+  absolutePath: string,
+): Promise<{ name: string; bytes: Uint8Array; mime: string }> {
+  const encoded = encodeURIComponent(absolutePath);
+  const data = await cursorGet<{ url?: string }>(
+    `/v0/agents/${agentId}/artifacts/download?path=${encoded}`,
+  );
+  if (!data.url) {
+    throw new Error(`No download URL for ${absolutePath}`);
+  }
+  const response = await fetch(data.url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Artifact v0 download HTTP ${response.status} for ${absolutePath}`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const name = absolutePath.split("/").filter(Boolean).pop() ?? "artifact";
   return { name, bytes, mime: mimeFromName(name) };
 }
 
 export async function collectAgentFiles(agentId: string) {
-  const listed = await listArtifacts(agentId);
-  const files: { name: string; bytes: Uint8Array; mime: string }[] = [];
-  for (const item of listed.slice(0, MAX_ARTIFACTS)) {
-    if (item.sizeBytes && item.sizeBytes > MAX_ARTIFACT_BYTES) continue;
-    try {
-      const file = await downloadArtifact(agentId, item.path);
-      if (file.bytes.byteLength > MAX_ARTIFACT_BYTES) continue;
-      files.push(file);
-    } catch (error) {
-      console.error(`[relay] artifact ${item.path} failed`, error);
-    }
-  }
-  return files;
+  const { collectAgentFilesWithRetry } = await import("@/lib/artifact-collect");
+  return collectAgentFilesWithRetry(agentId);
 }
 
 export function mimeFromName(name: string) {

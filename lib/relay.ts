@@ -150,17 +150,21 @@ export async function deliverReply(input: {
       });
     }
     for (const file of formatted.files) {
-      telegramMessageId = await sendTelegramFile({
-        chatId,
-        name: file.name,
-        bytes: file.bytes,
-        mime: file.mime,
-        caption:
-          !formatted.text && deliveredFiles.length === 0
-            ? markdownFileCaption(file.name) ?? file.name
-            : undefined,
-      });
-      deliveredFiles.push(file.name);
+      try {
+        telegramMessageId = await sendTelegramFile({
+          chatId,
+          name: file.name,
+          bytes: file.bytes,
+          mime: file.mime,
+          caption:
+            !formatted.text && deliveredFiles.length === 0
+              ? markdownFileCaption(file.name) ?? file.name
+              : undefined,
+        });
+        deliveredFiles.push(file.name);
+      } catch (error) {
+        console.error(`[relay] Telegram file ${file.name} failed`, error);
+      }
     }
   }
 
@@ -186,15 +190,19 @@ async function deliverSlackReply(
     });
   }
   for (const file of formatted.files) {
-    await sendSlackFile({
-      channelId: job.slackChannelId,
-      threadTs: job.slackThreadTs,
-      name: file.name,
-      bytes: file.bytes,
-      mime: file.mime,
-      title: markdownFileCaption(file.name) ?? file.name,
-    });
-    deliveredFiles.push(file.name);
+    try {
+      await sendSlackFile({
+        channelId: job.slackChannelId,
+        threadTs: job.slackThreadTs,
+        name: file.name,
+        bytes: file.bytes,
+        mime: file.mime,
+        title: markdownFileCaption(file.name) ?? file.name,
+      });
+      deliveredFiles.push(file.name);
+    } catch (error) {
+      console.error(`[relay] Slack file ${file.name} failed`, error);
+    }
   }
 
   return {
