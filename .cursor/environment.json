@@ -1,0 +1,3 @@
+{
+  "install": "npm install\nbash scripts/install-agent-env.sh"
+}

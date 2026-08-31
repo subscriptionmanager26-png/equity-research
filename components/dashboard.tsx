@@ -48,6 +48,8 @@ If the payload includes files[], download each files[].url immediately (they exp
 
 If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ to Telegram.
 
+PDF libraries are already installed in this environment: fpdf2, Pillow, and reportlab. Import them directly (from fpdf import FPDF). Do not pip install fpdf2 or any other package unless an import actually fails. To write a PDF you can run: python3 tools/pdf_report.py artifacts/report.pdf "Title" "Paragraph"
+
 Do not POST to Telegram, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
 Relay copies your final answer and artifacts to Telegram automatically.`;
@@ -195,11 +197,8 @@ export function Dashboard() {
           </h1>
           <p className="max-w-xl text-sm leading-6 text-zinc-400">
             Message your Telegram bot. Relay posts that text to your Cursor
-            automation webhook. When the agent POSTs back to{" "}
-            <code className="rounded bg-white/5 px-1 py-0.5 font-mono text-[12px] text-sky-200">
-              /api/reply
-            </code>
-            , the answer lands in Telegram.
+            automation webhook, waits for the run to finish, and sends the
+            answer (and any artifacts) back to Telegram.
           </p>
         </div>
         <a
@@ -338,6 +337,29 @@ export function Dashboard() {
               <pre className="overflow-x-auto rounded-lg bg-black/50 p-3 font-mono text-[11px] leading-5 text-zinc-300">
                 {AUTOMATION_PROMPT}
               </pre>
+              <div className="rounded-lg border border-sky-400/20 bg-sky-400/5 px-3 py-3 text-sm leading-6 text-zinc-300">
+                <p className="font-medium text-sky-100">
+                  Bake PDF tools into the agent environment
+                </p>
+                <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-zinc-400">
+                  <li>
+                    Attach this repository to the Cursor automation so runs
+                    check out Relay instead of an empty workspace.
+                  </li>
+                  <li>
+                    Save the Cloud Agent environment (it installs fpdf2, Pillow,
+                    and reportlab during{" "}
+                    <code className="font-mono text-[11px] text-sky-200">
+                      install
+                    </code>
+                    ).
+                  </li>
+                  <li>
+                    Run one Environment Build. New conversations boot from that
+                    snapshot and must not pip install fpdf2.
+                  </li>
+                </ol>
+              </div>
             </CardContent>
           </Card>
         </div>

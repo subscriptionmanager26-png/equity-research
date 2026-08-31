@@ -46,3 +46,6 @@ next-env.d.ts
 
 # cloud agent scratch
 agent-tools/
+
+# agent-generated files (Telegram artifacts)
+/artifacts/

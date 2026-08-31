@@ -64,9 +64,27 @@ If the payload includes files[], download each files[].url immediately (they exp
 
 If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ to Telegram.
 
+PDF libraries are already installed in this environment: fpdf2, Pillow, and reportlab. Import them directly (from fpdf import FPDF). Do not pip install fpdf2 or any other package unless an import actually fails. To write a PDF you can run: python3 tools/pdf_report.py artifacts/report.pdf "Title" "Paragraph"
+
 Do not POST to Telegram, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
 Relay copies your final answer and artifacts to Telegram automatically.
+```
+
+## Cloud Agent environment (PDF, fpdf2)
+
+Telegram-triggered Cursor agents start in a fresh VM. If that VM has no environment snapshot, the agent `pip install`s fpdf2 on every conversation.
+
+This repo pins those tools in `.cursor/environment.json`:
+
+1. `install` runs `npm install` and `scripts/install-agent-env.sh`, which installs `requirements-agent.txt` (`fpdf2`, Pillow, fonttools, reportlab).
+2. After you **Save** the environment and run one **Build**, later agents boot from that snapshot. `fpdf2` is already importable. They should not pip install it again.
+3. Point the Cursor automation at **this repository**. An automation with an empty repo list never sees `environment.json`, so it still starts bare and the agent will keep installing packages itself.
+
+Generate a PDF from a preinstalled helper:
+
+```bash
+python3 tools/pdf_report.py artifacts/report.pdf "Weekly notes" "First section." "Second section."
 ```
 
 Optional: point Cursor cloud-agent **statusChange** webhooks at `/api/cursor/status`. If `CURSOR_STATUS_WEBHOOK_SECRET` is set, Relay verifies `X-Webhook-Signature`.
