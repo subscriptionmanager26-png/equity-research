@@ -66,7 +66,7 @@ Slack and Telegram stay fully separate — answers never cross platforms.
 
 ## How the agent replies
 
-Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. Files the agent writes under `artifacts/` are delivered as attachments (PDFs, images, etc.). Answers longer than ~500 characters are sent as `answer.md` instead of a long chat message (short replies stay as plain text).
+Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. Reports should be markdown files under `artifacts/` (for example `artifacts/report.md`). Answers longer than ~500 characters are auto-wrapped as `report.md` instead of a long chat message (short replies stay as plain text).
 
 **Slack attachments:** Relay can send files to Slack with your user token (`files:write`). Slack → Cursor file sharing works via inline base64 when `PUBLIC_URL` is unset, or via download URLs when it is set.
 
@@ -77,33 +77,19 @@ Replace the automation prompt with the text on the dashboard (or this):
 ```
 You are Relay's Cursor automation. Each run is a question from Telegram or Slack.
 
-The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation. Answer in your final message.
-If the payload includes files[], download each files[].url immediately (they expire in about an hour) and use those files.
+The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation.
+If the payload includes files[], download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload.
 
-If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ back to the same Telegram chat or Slack thread.
-
-PDF libraries are already installed in this environment: fpdf2, Pillow, and reportlab. Import them directly (from fpdf import FPDF). Do not pip install fpdf2 or any other package unless an import actually fails. To write a PDF you can run: python3 tools/pdf_report.py artifacts/report.pdf "Title" "Paragraph"
+For research reports or long answers, write a markdown file under artifacts/ — for example artifacts/report.md — using the Write tool. Prefer markdown over PDF; it is faster and Relay delivers .md files back to the same Telegram chat or Slack thread. Keep your final chat message short (a one-line summary is enough). Relay sends artifacts/ files automatically.
 
 Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
 Relay copies your final answer and artifacts to the user automatically.
 ```
 
-## Cloud Agent environment (PDF, fpdf2)
+## Cloud Agent environment
 
-Telegram-triggered Cursor agents start in a fresh VM. If that VM has no environment snapshot, the agent `pip install`s fpdf2 on every conversation.
-
-This repo pins those tools in `.cursor/environment.json`:
-
-1. `install` runs `npm install` and `scripts/install-agent-env.sh`, which installs `requirements-agent.txt` (`fpdf2`, Pillow, fonttools, reportlab).
-2. After you **Save** the environment and run one **Build**, later agents boot from that snapshot. `fpdf2` is already importable. They should not pip install it again.
-3. Point the Cursor automation at **this repository**. An automation with an empty repo list never sees `environment.json`, so it still starts bare and the agent will keep installing packages itself.
-
-Generate a PDF from a preinstalled helper:
-
-```bash
-python3 tools/pdf_report.py artifacts/report.pdf "Weekly notes" "First section." "Second section."
-```
+Point the Cursor automation at **this repository** so runs check out Relay (including `.cursor/environment.json`). Optional: save the environment and run one build so `npm install` is pre-baked.
 
 Optional: point Cursor cloud-agent **statusChange** webhooks at `/api/cursor/status`. If `CURSOR_STATUS_WEBHOOK_SECRET` is set, Relay verifies `X-Webhook-Signature`.
 

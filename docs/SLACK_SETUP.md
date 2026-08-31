@@ -33,7 +33,7 @@ At [api.slack.com/apps](https://api.slack.com/apps) → your app → **OAuth & P
 | `mpim:history` | Group DMs |
 | `channels:read`, `groups:read` | Resolve channels |
 | `chat:write` | Post replies **as you** |
-| `files:write` | Send PDFs/attachments |
+| `files:write` | Send markdown attachments |
 | `users:read` | Identify senders |
 
 Reinstall/reauthorize after adding scopes.

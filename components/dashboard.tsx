@@ -52,12 +52,10 @@ type StatusPayload = {
 
 const AUTOMATION_PROMPT = `You are Relay's Cursor automation. Each run is a question from Telegram or Slack.
 
-The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation. Answer in your final message.
-If the payload includes files[], download each files[].url immediately (they expire in about an hour) and use those files.
+The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation.
+If the payload includes files[], download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload.
 
-If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ back to the same Telegram chat or Slack thread.
-
-PDF libraries are already installed in this environment: fpdf2, Pillow, and reportlab. Import them directly (from fpdf import FPDF). Do not pip install fpdf2 or any other package unless an import actually fails. To write a PDF you can run: python3 tools/pdf_report.py artifacts/report.pdf "Title" "Paragraph"
+For research reports or long answers, write a markdown file under artifacts/ — for example artifacts/report.md — using the Write tool. Prefer markdown over PDF; it is faster and Relay delivers .md files back to the same Telegram chat or Slack thread. Keep your final chat message short (a one-line summary is enough). Relay sends artifacts/ files automatically.
 
 Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
@@ -355,26 +353,21 @@ export function Dashboard() {
               </pre>
               <div className="rounded-lg border border-sky-400/20 bg-sky-400/5 px-3 py-3 text-sm leading-6 text-zinc-300">
                 <p className="font-medium text-sky-100">
-                  Bake PDF tools into the agent environment
+                  Reports as markdown (not PDF)
                 </p>
-                <ol className="mt-2 list-decimal space-y-1 pl-4 text-xs text-zinc-400">
-                  <li>
-                    Attach this repository to the Cursor automation so runs
-                    check out Relay instead of an empty workspace.
-                  </li>
-                  <li>
-                    Save the Cloud Agent environment (it installs fpdf2, Pillow,
-                    and reportlab during{" "}
-                    <code className="font-mono text-[11px] text-sky-200">
-                      install
-                    </code>
-                    ).
-                  </li>
-                  <li>
-                    Run one Environment Build. New conversations boot from that
-                    snapshot and must not pip install fpdf2.
-                  </li>
-                </ol>
+                <p className="mt-2 text-xs text-zinc-400">
+                  Have the agent write{" "}
+                  <code className="font-mono text-[11px] text-sky-200">
+                    artifacts/report.md
+                  </code>{" "}
+                  with the Write tool. Relay delivers the .md file to Telegram
+                  or Slack. Long inline answers are also auto-wrapped as{" "}
+                  <code className="font-mono text-[11px] text-sky-200">
+                    report.md
+                  </code>
+                  . No PDF generation needed — faster and easier to read in chat
+                  apps.
+                </p>
               </div>
             </CardContent>
           </Card>

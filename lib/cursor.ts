@@ -18,11 +18,9 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
   const fileLine = hasFiles
     ? " Download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload."
     : "";
-  const artifactLine = ` If you produce a report or any file the user should receive, you MUST write it under artifacts/ (for example artifacts/report.pdf) using the Write tool or python3 tools/pdf_report.py. Relay only delivers files registered under artifacts/. Verify the file exists before saying it is attached.`;
-  const pdfLine =
-    " PDF libraries are preinstalled (fpdf2, Pillow, reportlab) — import them, do not pip install.";
+  const artifactLine = ` For reports or long answers, write a markdown file under artifacts/ (for example artifacts/report.md) using the Write tool. Prefer markdown over PDF — it is faster and Relay delivers .md files to Telegram and Slack. Relay only sends files registered under artifacts/. Verify the file exists before saying it is attached.`;
   const noPostLine = ` Do not POST to ${channel}, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or ${channel}.`;
-  return `Answer the user's text.${fileLine}${artifactLine}${pdfLine}${noPostLine}`;
+  return `Answer the user's text.${fileLine}${artifactLine}${noPostLine}`;
 }
 
 export async function buildCursorPayload(job: Job) {

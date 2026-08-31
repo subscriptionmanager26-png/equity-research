@@ -12,7 +12,7 @@ export type FormattedDelivery = {
   usedMarkdownFile: boolean;
 };
 
-/** Answers at or below this length stay as chat text; longer ones become answer.md. */
+/** Answers at or below this length stay as chat text; longer ones become report.md. */
 export const INLINE_ANSWER_MAX_CHARS = 500;
 
 const TEXT_ARTIFACT = /\.(md|markdown|txt)$/i;
@@ -45,7 +45,7 @@ export function formatReplyForDelivery(
   }
 
   files.unshift({
-    name: "answer.md",
+    name: "report.md",
     bytes: new TextEncoder().encode(trimmed),
     mime: "text/markdown",
   });
