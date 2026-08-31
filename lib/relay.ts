@@ -2,6 +2,7 @@ import { timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
 
 import { getConfig } from "@/lib/config";
 import { dispatchToCursor } from "@/lib/cursor";
+import { extractAgentId } from "@/lib/cursor-api";
 import {
   addJobEvent,
   createJob,
@@ -60,16 +61,20 @@ export async function ingestAndDispatch(input: {
       return (await getJob(job.id)) ?? job;
     }
 
+    const agentId = extractAgentId(result.body);
     return (await addJobEvent(
       job.id,
       {
         type: "dispatched",
-        detail: `Posted to Cursor automation (HTTP ${result.status})`,
+        detail: agentId
+          ? `Posted to Cursor automation (${agentId})`
+          : `Posted to Cursor automation (HTTP ${result.status})`,
       },
       {
         status: "dispatched",
         cursorHttpStatus: result.status,
         cursorBody: result.body,
+        cursorAgentId: agentId,
       },
     )) as Job;
   } catch (error) {

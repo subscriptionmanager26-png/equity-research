@@ -31,6 +31,7 @@ export type Job = {
   status: JobStatus;
   cursorHttpStatus?: number;
   cursorBody?: unknown;
+  cursorAgentId?: string;
   reply?: JobReply;
   error?: string;
   events: JobEvent[];

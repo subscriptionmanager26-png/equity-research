@@ -46,7 +46,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
 
   await sendTelegramMessage({
     chatId,
-    text: "Sent to your Cursor agent. I will reply here when it posts back.",
+    text: "Sent to your Cursor agent. I will reply here when it finishes.",
     replyToMessageId: message.message_id,
   });
 
