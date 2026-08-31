@@ -4,6 +4,11 @@ import { getConfig } from "@/lib/config";
 import { dispatchToCursor } from "@/lib/cursor";
 import { extractAgentId } from "@/lib/cursor-api";
 import {
+  formatReplyForDelivery,
+  markdownFileCaption,
+  type DeliveryFile,
+} from "@/lib/delivery-format";
+import {
   addJobEvent,
   createJob,
   getJob,
@@ -112,14 +117,16 @@ export async function deliverReply(input: {
   status: string;
   message: string;
   job?: Job;
-  files?: { name: string; bytes: Uint8Array; mime?: string }[];
+  files?: DeliveryFile[];
 }): Promise<DeliveryResult> {
   const cfg = getConfig();
   const job =
     input.job ?? (input.jobId ? await getJob(input.jobId) : undefined);
 
+  const formatted = formatReplyForDelivery(input.message, input.files ?? []);
+
   if (job?.source === "slack" && job.slackChannelId && job.slackThreadTs) {
-    return deliverSlackReply(job, input.message, input.files ?? []);
+    return deliverSlackReply(job, formatted);
   }
 
   const chats = await listChats();
@@ -136,19 +143,22 @@ export async function deliverReply(input: {
   let telegramMessageId: number | undefined;
   const deliveredFiles: string[] = [];
   if (chatId && cfg.telegramConfigured) {
-    if (input.message.trim()) {
+    if (formatted.text) {
       telegramMessageId = await sendTelegramMessage({
         chatId,
-        text: input.message,
+        text: formatted.text,
       });
     }
-    for (const file of input.files ?? []) {
+    for (const file of formatted.files) {
       telegramMessageId = await sendTelegramFile({
         chatId,
         name: file.name,
         bytes: file.bytes,
         mime: file.mime,
-        caption: deliveredFiles.length === 0 ? file.name : undefined,
+        caption:
+          !formatted.text && deliveredFiles.length === 0
+            ? markdownFileCaption(file.name) ?? file.name
+            : undefined,
       });
       deliveredFiles.push(file.name);
     }
@@ -159,8 +169,7 @@ export async function deliverReply(input: {
 
 async function deliverSlackReply(
   job: Job,
-  message: string,
-  files: { name: string; bytes: Uint8Array; mime?: string }[],
+  formatted: ReturnType<typeof formatReplyForDelivery>,
 ): Promise<DeliveryResult> {
   const cfg = getConfig();
   if (!cfg.slackConfigured || !job.slackChannelId || !job.slackThreadTs) {
@@ -169,20 +178,21 @@ async function deliverSlackReply(
 
   let slackMessageTs: string | undefined;
   const deliveredFiles: string[] = [];
-  if (message.trim()) {
+  if (formatted.text) {
     slackMessageTs = await sendSlackMessage({
       channelId: job.slackChannelId,
       threadTs: job.slackThreadTs,
-      text: message,
+      text: formatted.text,
     });
   }
-  for (const file of files) {
+  for (const file of formatted.files) {
     await sendSlackFile({
       channelId: job.slackChannelId,
       threadTs: job.slackThreadTs,
       name: file.name,
       bytes: file.bytes,
       mime: file.mime,
+      title: markdownFileCaption(file.name) ?? file.name,
     });
     deliveredFiles.push(file.name);
   }

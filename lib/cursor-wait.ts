@@ -5,7 +5,6 @@ import {
   extractAgentId,
   getAgent,
   getAgentAnswer,
-  mimeFromName,
 } from "@/lib/cursor-api";
 import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
 import { deliverReply, deliveryDetail } from "@/lib/relay";
@@ -75,15 +74,7 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
 
       const answer = await getAgentAnswer(agentId);
       const failed = agentFailed(agent.status);
-      const artifacts = failed ? [] : await collectAgentFiles(agentId).catch(() => []);
-      const files = [...artifacts];
-      if (!failed && !files.length && answer && answer.length > 2000) {
-        files.push({
-          name: "report.md",
-          bytes: new TextEncoder().encode(answer),
-          mime: mimeFromName("report.md"),
-        });
-      }
+      const files = failed ? [] : await collectAgentFiles(agentId).catch(() => []);
       const link = agent.url ?? agent.target?.url ?? `https://cursor.com/agents/${agentId}`;
       const message =
         answer ||
