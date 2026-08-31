@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowUpRight,
   Bot,
@@ -42,22 +42,20 @@ type StatusPayload = {
   jobCount: number;
 };
 
-const AUTOMATION_PROMPT = `You are triggered by Relay. The webhook payload includes the user's Telegram text, a job_id, a reply_url, and a reply_token.
+const AUTOMATION_PROMPT = `You are triggered by Relay. The webhook payload includes the user's text, chat_id, and telegram.send_message_url.
 
-When you have an answer, POST immediately:
+When you have an answer, POST immediately to Telegram (this is how the user sees the reply):
 
-POST {reply_url}
-Authorization: Bearer {reply_token}
+POST {telegram.send_message_url}
 Content-Type: application/json
 
 {
-  "job_id": "{job_id}",
-  "status": "finished",
-  "message": "<your reply, plain text is fine>"
+  "chat_id": {chat_id},
+  "text": "<your reply, plain text is fine>"
 }
 
-If you fail, still POST with status "error" and a short explanation.
-Always use reply_url so the user sees the answer in Telegram. Do not stop without posting back.`;
+If you fail, still send a short error to that same chat_id.
+If reply_url is an https URL, you may also POST { job_id, status, message } there with Authorization: Bearer {reply_token}. Never block on that. Always reply on Telegram.`;
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -117,7 +115,6 @@ export function Dashboard() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
 
   const refresh = useCallback(async () => {
     try {
@@ -146,12 +143,6 @@ export function Dashboard() {
       window.clearInterval(timer);
     };
   }, [refresh]);
-
-  const absoluteReplyUrl = useMemo(() => {
-    if (!status) return "";
-    if (status.replyUrl.startsWith("http")) return status.replyUrl;
-    return origin ? `${origin}${status.replyUrl}` : status.replyUrl;
-  }, [origin, status]);
 
   async function sendMessage() {
     const prompt = text.trim();
@@ -261,13 +252,17 @@ export function Dashboard() {
           }
         />
         <StatusCard
-          title="Reply webhook"
-          ok={Boolean(status?.replyConfigured && status.publicUrlSet)}
-          warn={Boolean(status?.replyConfigured && !status.publicUrlSet)}
+          title="Agent reply"
+          ok={Boolean(status?.telegramConfigured && status.chats.length)}
+          warn={Boolean(
+            status?.telegramConfigured && !status.chats.length && !status.publicUrlSet,
+          )}
           detail={
-            status?.publicUrlSet
-              ? "PUBLIC_URL is set, so the cloud agent can POST back."
-              : "Works locally. Set PUBLIC_URL to a public HTTPS origin so Cursor can reach /api/reply."
+            status?.telegramConfigured && status.chats.length
+              ? "The agent replies in Telegram with sendMessage. PUBLIC_URL is optional."
+              : status?.telegramConfigured
+                ? "Bot is connected. Send /start in Telegram so Relay knows which chat to reply to."
+                : "Add TELEGRAM_BOT_TOKEN so the agent can reply in Telegram."
           }
         />
       </section>
@@ -279,7 +274,7 @@ export function Dashboard() {
               <CardTitle>Ask the agent</CardTitle>
               <CardDescription>
                 Same path as Telegram: your text is POSTed to the Cursor
-                automation, then Relay waits for /api/reply.
+                automation. The agent replies in the linked Telegram chat.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
@@ -332,17 +327,19 @@ export function Dashboard() {
 
           <Card className="border-white/5 bg-zinc-950/60 ring-white/10">
             <CardHeader>
-              <CardTitle>Reply endpoint</CardTitle>
+              <CardTitle>How the agent replies</CardTitle>
               <CardDescription>
-                Give this URL to the agent. Auth header uses
-                REPLY_WEBHOOK_SECRET.
+                Cursor posts straight to Telegram. No public URL required.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <CodeRow label="POST" value={absoluteReplyUrl} />
               <CodeRow
-                label="Auth"
-                value="Authorization: Bearer <REPLY_WEBHOOK_SECRET>"
+                label="Telegram"
+                value="POST https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/sendMessage"
+              />
+              <CodeRow
+                label="Body"
+                value='{ "chat_id": <linked chat>, "text": "<answer>" }'
               />
               <Separator />
               <div className="flex items-center justify-between gap-2">

@@ -28,19 +28,16 @@ export async function handleTelegramMessage(message: TelegramMessage) {
   }
 
   if (text === "/start" || text === "/help") {
-    const { publicUrl, cursorConfigured } = getConfig();
+    const { cursorConfigured } = getConfig();
     await sendTelegramMessage({
       chatId,
       text: [
-        `Hi ${name}. I am Relay.`,
-        "Anything you type here is posted to your Cursor automation webhook.",
-        "When the agent finishes, it posts back to Relay, and I send the answer here.",
+        `Hi ${name}. I am Relay, and this chat is linked.`,
+        "Send a task in plain text. I post it to your Cursor automation, and the agent replies here on Telegram.",
         cursorConfigured
           ? "Cursor webhook: configured."
           : "Cursor webhook: missing. Set CURSOR_WEBHOOK_URL and CURSOR_WEBHOOK_TOKEN.",
-        publicUrl
-          ? `Reply webhook: ${publicUrl}/api/reply`
-          : "Set PUBLIC_URL so the cloud agent can reach the reply webhook.",
+        "If Cursor says the automation is disabled, turn it on at cursor.com/automations, then send the task again.",
         "Commands: /start, /help",
       ].join("\n"),
     });

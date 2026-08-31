@@ -19,7 +19,19 @@ export async function ingestAndDispatch(input: {
   username?: string;
   displayName?: string;
 }): Promise<Job> {
-  const job = await createJob(input);
+  const cfg = getConfig();
+  const fallback = await latestChat();
+  const envChatId = cfg.telegramChatId ? Number(cfg.telegramChatId) : undefined;
+  const chatId =
+    input.chatId ??
+    (Number.isFinite(envChatId) ? envChatId : undefined) ??
+    fallback?.chatId;
+  const job = await createJob({
+    ...input,
+    chatId,
+    username: input.username ?? fallback?.username,
+    displayName: input.displayName ?? fallback?.displayName,
+  });
 
   try {
     const result = await dispatchToCursor(job);
@@ -35,9 +47,9 @@ export async function ingestAndDispatch(input: {
           cursorBody: result.body,
         },
       );
-      if (input.chatId) {
+      if (chatId) {
         await sendTelegramMessage({
-          chatId: input.chatId,
+          chatId,
           text: [
             "I reached Cursor, but the automation did not accept the request.",
             `${detail}.`,
@@ -67,9 +79,9 @@ export async function ingestAndDispatch(input: {
       { type: "cursor_error", detail },
       { status: "error", error: detail },
     );
-    if (input.chatId) {
+    if (chatId) {
       await sendTelegramMessage({
-        chatId: input.chatId,
+        chatId,
         text: `I could not reach Cursor: ${detail}`,
       }).catch(() => undefined);
     }
