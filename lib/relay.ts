@@ -7,6 +7,7 @@ import {
   formatReplyForJob,
   markdownFileCaption,
   type DeliveryFile,
+  type FormattedDelivery,
 } from "@/lib/delivery-format";
 import {
   addJobEvent,
@@ -146,6 +147,7 @@ export async function deliverReply(input: {
 
   let telegramMessageId: number | undefined;
   const deliveredFiles: string[] = [];
+  const uploadErrors: string[] = [];
   if (chatId && cfg.telegramConfigured) {
     if (formatted.text) {
       telegramMessageId = await sendTelegramMessage({
@@ -167,8 +169,16 @@ export async function deliverReply(input: {
         });
         deliveredFiles.push(file.name);
       } catch (error) {
+        const detail = error instanceof Error ? error.message : "upload failed";
         console.error(`[relay] Telegram file ${file.name} failed`, error);
+        uploadErrors.push(`${file.name}: ${detail}`);
       }
+    }
+    if (uploadErrors.length) {
+      telegramMessageId = await sendTelegramMessage({
+        chatId,
+        text: `Could not attach file(s): ${uploadErrors.join("; ")}`,
+      }).catch(() => telegramMessageId);
     }
   }
 
@@ -177,7 +187,7 @@ export async function deliverReply(input: {
 
 async function deliverSlackReply(
   job: Job,
-  formatted: ReturnType<typeof formatReplyForDelivery>,
+  formatted: FormattedDelivery,
 ): Promise<DeliveryResult> {
   const cfg = getConfig();
   if (!cfg.slackConfigured || !job.slackChannelId || !job.slackThreadTs) {
@@ -186,6 +196,7 @@ async function deliverSlackReply(
 
   let slackMessageTs: string | undefined;
   const deliveredFiles: string[] = [];
+  const uploadErrors: string[] = [];
   if (formatted.text) {
     slackMessageTs = await sendSlackMessage({
       channelId: job.slackChannelId,
@@ -205,8 +216,18 @@ async function deliverSlackReply(
       });
       deliveredFiles.push(file.name);
     } catch (error) {
+      const detail = error instanceof Error ? error.message : "upload failed";
       console.error(`[relay] Slack file ${file.name} failed`, error);
+      uploadErrors.push(`${file.name}: ${detail}`);
     }
+  }
+
+  if (uploadErrors.length && job.slackChannelId && job.slackThreadTs) {
+    await sendSlackMessage({
+      channelId: job.slackChannelId,
+      threadTs: job.slackThreadTs,
+      text: `Could not attach file(s): ${uploadErrors.join("; ")}`,
+    }).catch(() => undefined);
   }
 
   return {

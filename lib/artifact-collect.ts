@@ -62,8 +62,8 @@ export async function collectAgentFilesWithRetry(
   answer?: string,
   options?: { attempts?: number; delayMs?: number },
 ): Promise<CollectedFile[]> {
-  const attempts = options?.attempts ?? 6;
-  const delayMs = options?.delayMs ?? 2500;
+  const attempts = options?.attempts ?? 10;
+  const delayMs = options?.delayMs ?? 3000;
   const seen = new Set<string>();
   const files: CollectedFile[] = [];
 

@@ -3,13 +3,17 @@ import {
   agentIsDone,
   extractAgentId,
   getAgent,
-  getAgentAnswer,
+  getAgentDeliveryAnswer,
 } from "@/lib/cursor-api";
 import { userRequestedPdf } from "@/lib/automation-prompt";
 import {
   collectAgentFilesWithRetry,
   mentionedArtifactsMissing,
 } from "@/lib/artifact-collect";
+import {
+  expectsReportFile,
+  findRecentReportFallback,
+} from "@/lib/report-fallback";
 import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
 import { deliverReply, deliveryDetail } from "@/lib/relay";
 
@@ -76,7 +80,7 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
         continue;
       }
 
-      const answer = await getAgentAnswer(agentId);
+      const answer = await getAgentDeliveryAnswer(agentId);
       const failed = agentFailed(agent.status);
       const allowPdf = userRequestedPdf(job?.prompt ?? "");
       const collected = failed
@@ -94,9 +98,25 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
             ? `Cursor agent ended with ${agent.status}. ${link}`
             : `Cursor finished but did not leave a text answer. ${link}`);
 
+      if (
+        !failed &&
+        files.length === 0 &&
+        expectsReportFile(job?.prompt ?? "", message) &&
+        message.length < 500
+      ) {
+        const allJobs = await listJobs();
+        const fallback = findRecentReportFallback(job, allJobs);
+        if (fallback) {
+          console.info(
+            `[relay] Using prior job report body for ${jobId} (${fallback.length} chars)`,
+          );
+          message = fallback;
+        }
+      }
+
       const missingArtifacts = mentionedArtifactsMissing(answer, files);
-      if (missingArtifacts.length && !failed) {
-        message += `\n\n_Relay could not retrieve ${missingArtifacts.join(", ")} from Cursor — the agent may not have saved them under artifacts/._`;
+      if (missingArtifacts.length && !failed && files.length === 0) {
+        message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API. Relay attached the report from the agent text instead._`;
       }
 
       const delivery = await deliverReply({
