@@ -1,11 +1,28 @@
 import { getConfig } from "@/lib/config";
-import { telegramFileUrl } from "@/lib/telegram";
+import { resolveJobFileUrl } from "@/lib/attachments";
 import type { Job } from "@/lib/types";
 
 export function replyUrl() {
   const { publicUrl } = getConfig();
   const path = "/api/reply";
   return publicUrl ? `${publicUrl}${path}` : path;
+}
+
+function deliveryInstructions(job: Job, hasFiles: boolean) {
+  const channel =
+    job.source === "slack"
+      ? "Slack thread"
+      : job.source === "telegram"
+        ? "Telegram"
+        : "the user";
+  const fileLine = hasFiles
+    ? " Download each files[].url immediately (they expire in about an hour) and use those files."
+    : "";
+  const artifactLine = ` If you produce a report or any file the user should receive, write it under artifacts/ (for example artifacts/report.pdf). Relay sends artifacts/ files back to ${channel}.`;
+  const pdfLine =
+    " PDF libraries are preinstalled (fpdf2, Pillow, reportlab) — import them, do not pip install.";
+  const noPostLine = ` Do not POST to ${channel}, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or ${channel}.`;
+  return `Answer the user's text.${fileLine}${artifactLine}${pdfLine}${noPostLine}`;
 }
 
 export async function buildCursorPayload(job: Job) {
@@ -15,21 +32,27 @@ export async function buildCursorPayload(job: Job) {
       name: file.name,
       mime: file.mime,
       size: file.size,
-      url: await telegramFileUrl(file.fileId),
+      url: await resolveJobFileUrl(job, file),
     });
   }
+
+  const text = job.threadContext
+    ? `${job.prompt}\n\n---\nSlack thread context (same conversation):\n${job.threadContext}`
+    : job.prompt;
 
   return {
     source: job.source,
     job_id: job.id,
     chat_id: job.chatId,
+    slack_channel_id: job.slackChannelId,
+    slack_thread_ts: job.slackThreadTs,
+    slack_user_id: job.slackUserId,
     username: job.username,
     from: job.displayName,
-    text: job.prompt,
+    text,
+    thread_context: job.threadContext,
     files: files.length ? files : undefined,
-    instructions: files.length
-      ? "Answer the user's text. Download each files[].url immediately (they expire in about an hour) and use those files. If you produce a report or any file the user should receive, write it under artifacts/ (for example artifacts/report.pdf). PDF libraries are preinstalled (fpdf2, Pillow, reportlab) — import them, do not pip install. python3 tools/pdf_report.py artifacts/report.pdf \"Title\" \"Body\" is available. Relay sends artifacts/ files to Telegram. Do not POST to Telegram, Relay, or any other URL. Do not mention delivery, webhooks, or Telegram."
-      : "Answer the user's text. If you produce a report or any file the user should receive, write it under artifacts/ (for example artifacts/report.pdf or artifacts/report.md). PDF libraries are preinstalled (fpdf2, Pillow, reportlab) — import them, do not pip install. python3 tools/pdf_report.py artifacts/report.pdf \"Title\" \"Body\" is available. Relay sends artifacts/ files to Telegram. Do not POST to Telegram, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or Telegram.",
+    instructions: deliveryInstructions(job, files.length > 0),
   };
 }
 

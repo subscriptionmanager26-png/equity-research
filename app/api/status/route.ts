@@ -12,10 +12,17 @@ export async function GET() {
   return NextResponse.json({
     ...status,
     replyUrl: replyUrl(),
+    slackEventsPath: "/api/slack/events",
     bot: store.bot
       ? {
           username: store.bot.username,
           name: store.bot.name,
+        }
+      : null,
+    slackBot: store.slackBot
+      ? {
+          name: store.slackBot.name,
+          userId: store.slackBot.userId,
         }
       : null,
     chats: store.chats.slice(0, 5).map((chat) => ({

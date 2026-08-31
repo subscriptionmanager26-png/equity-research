@@ -10,6 +10,7 @@ import {
   latestChat,
   listChats,
 } from "@/lib/jobs";
+import { sendSlackFile, sendSlackMessage } from "@/lib/slack";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
 import type { Job, JobSource, TelegramChat } from "@/lib/types";
 
@@ -19,6 +20,11 @@ export async function ingestAndDispatch(input: {
   chatId?: number;
   username?: string;
   displayName?: string;
+  threadContext?: string;
+  slackChannelId?: string;
+  slackThreadTs?: string;
+  slackUserId?: string;
+  slackMessageTs?: string;
   files?: Job["files"];
 }): Promise<Job> {
   const cfg = getConfig();
@@ -51,16 +57,11 @@ export async function ingestAndDispatch(input: {
           cursorBody: result.body,
         },
       );
-      if (chatId) {
-        await sendTelegramMessage({
-          chatId,
-          text: [
-            "I reached Cursor, but the automation did not accept the request.",
-            `${detail}.`,
-            "Turn the automation on at cursor.com/automations, then send this again.",
-          ].join(" "),
-        }).catch(() => undefined);
-      }
+      await notifyJobFailure(job, [
+        "I reached Cursor, but the automation did not accept the request.",
+        `${detail}.`,
+        "Turn the automation on at cursor.com/automations, then send this again.",
+      ].join(" "));
       return (await getJob(job.id)) ?? job;
     }
 
@@ -87,15 +88,19 @@ export async function ingestAndDispatch(input: {
       { type: "cursor_error", detail },
       { status: "error", error: detail },
     );
-    if (chatId) {
-      await sendTelegramMessage({
-        chatId,
-        text: `I could not reach Cursor: ${detail}`,
-      }).catch(() => undefined);
-    }
+    await notifyJobFailure(job, `I could not reach Cursor: ${detail}`);
     return (await getJob(job.id)) ?? job;
   }
 }
+
+export type DeliveryResult = {
+  chatId?: number;
+  telegramMessageId?: number;
+  slackChannelId?: string;
+  slackThreadTs?: string;
+  slackMessageTs?: string;
+  files: string[];
+};
 
 export async function deliverReply(input: {
   jobId?: string;
@@ -104,10 +109,15 @@ export async function deliverReply(input: {
   message: string;
   job?: Job;
   files?: { name: string; bytes: Uint8Array; mime?: string }[];
-}) {
+}): Promise<DeliveryResult> {
   const cfg = getConfig();
   const job =
     input.job ?? (input.jobId ? await getJob(input.jobId) : undefined);
+
+  if (job?.source === "slack" && job.slackChannelId && job.slackThreadTs) {
+    return deliverSlackReply(job, input.message, input.files ?? []);
+  }
+
   const chats = await listChats();
   const fallbackChat = await latestChat();
   const envChatId = cfg.telegramChatId ? Number(cfg.telegramChatId) : undefined;
@@ -143,6 +153,58 @@ export async function deliverReply(input: {
   return { chatId, telegramMessageId, files: deliveredFiles };
 }
 
+async function deliverSlackReply(
+  job: Job,
+  message: string,
+  files: { name: string; bytes: Uint8Array; mime?: string }[],
+): Promise<DeliveryResult> {
+  const cfg = getConfig();
+  if (!cfg.slackConfigured || !job.slackChannelId || !job.slackThreadTs) {
+    return { files: [] };
+  }
+
+  let slackMessageTs: string | undefined;
+  const deliveredFiles: string[] = [];
+  if (message.trim()) {
+    slackMessageTs = await sendSlackMessage({
+      channelId: job.slackChannelId,
+      threadTs: job.slackThreadTs,
+      text: message,
+    });
+  }
+  for (const file of files) {
+    await sendSlackFile({
+      channelId: job.slackChannelId,
+      threadTs: job.slackThreadTs,
+      name: file.name,
+      bytes: file.bytes,
+      mime: file.mime,
+    });
+    deliveredFiles.push(file.name);
+  }
+
+  return {
+    slackChannelId: job.slackChannelId,
+    slackThreadTs: job.slackThreadTs,
+    slackMessageTs,
+    files: deliveredFiles,
+  };
+}
+
+async function notifyJobFailure(job: Job, text: string) {
+  if (job.source === "slack" && job.slackChannelId && job.slackThreadTs) {
+    await sendSlackMessage({
+      channelId: job.slackChannelId,
+      threadTs: job.slackThreadTs,
+      text,
+    }).catch(() => undefined);
+    return;
+  }
+  if (job.chatId) {
+    await sendTelegramMessage({ chatId: job.chatId, text }).catch(() => undefined);
+  }
+}
+
 function resolveJobChatId(input: {
   source: JobSource;
   chatId?: number;
@@ -150,7 +212,7 @@ function resolveJobChatId(input: {
   fallbackChatId?: number;
 }) {
   if (input.chatId !== undefined) return input.chatId;
-  if (input.source === "telegram") return undefined;
+  if (input.source === "telegram" || input.source === "slack") return undefined;
   return input.envChatId ?? input.fallbackChatId;
 }
 
@@ -163,7 +225,9 @@ function resolveDeliveryChatId(input: {
 }) {
   if (input.explicitChatId !== undefined) return input.explicitChatId;
   if (input.job?.chatId !== undefined) return input.job.chatId;
-  if (input.job?.source === "telegram") return undefined;
+  if (input.job?.source === "telegram" || input.job?.source === "slack") {
+    return undefined;
+  }
   return (
     input.envChatId ?? input.fallbackChat?.chatId ?? input.chats[0]?.chatId
   );
@@ -190,4 +254,25 @@ export function bearerToken(header: string | null): string | undefined {
   if (!header) return undefined;
   const match = header.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim();
+}
+
+export function deliveryDetail(
+  job: Job | undefined,
+  delivery: {
+    chatId?: number;
+    slackChannelId?: string;
+    slackThreadTs?: string;
+    files?: string[];
+  },
+) {
+  const fileNote = delivery.files?.length
+    ? ` with ${delivery.files.join(", ")}`
+    : "";
+  if (job?.source === "slack" && delivery.slackChannelId) {
+    return `Delivered Cursor result to Slack ${delivery.slackChannelId} thread ${delivery.slackThreadTs ?? ""}${fileNote}`.trim();
+  }
+  if (delivery.chatId) {
+    return `Delivered Cursor result to Telegram chat ${delivery.chatId}${fileNote}`;
+  }
+  return `Stored Cursor result${fileNote}`;
 }

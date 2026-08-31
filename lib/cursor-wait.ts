@@ -8,7 +8,7 @@ import {
   mimeFromName,
 } from "@/lib/cursor-api";
 import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
-import { deliverReply } from "@/lib/relay";
+import { deliverReply, deliveryDetail } from "@/lib/relay";
 
 declare global {
   var __relayCursorWaiter: { started: boolean } | undefined;
@@ -100,16 +100,11 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
         message,
         files,
       });
-      const fileNote = delivery.files?.length
-        ? ` with ${delivery.files.join(", ")}`
-        : "";
       await addJobEvent(
         jobId,
         {
           type: "replied",
-          detail: delivery.chatId
-            ? `Delivered Cursor result to Telegram chat ${delivery.chatId}${fileNote}`
-            : "Stored Cursor result (no Telegram chat)",
+          detail: deliveryDetail(job, delivery),
         },
         {
           status: failed ? "error" : "replied",
@@ -120,6 +115,7 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
             status: agent.status ?? "finished",
             receivedAt: new Date().toISOString(),
             telegramMessageId: delivery.telegramMessageId,
+            slackMessageTs: delivery.slackMessageTs,
             files: delivery.files,
           },
         },

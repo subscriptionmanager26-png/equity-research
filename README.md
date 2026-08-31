@@ -1,17 +1,17 @@
 # Relay
 
-A small bridge between **Telegram** and a **Cursor automation webhook**.
+A small bridge between **Telegram**, **Slack**, and a **Cursor automation webhook**.
 
 You already have an automation that starts when something POSTs to:
 
 `https://api2.cursor.sh/automations/webhook/<id>`
 
-Cursor does not have a place to talk back on Telegram. Relay is that missing return path.
+Cursor does not have a built-in way to talk back on Telegram or Slack. Relay is that return path.
 
 ```
-Telegram message  →  Relay  →  Cursor automation webhook
+Telegram or Slack  →  Relay  →  Cursor automation webhook
 Relay polls Cursor until the run finishes
-Relay  →  Telegram sendMessage  →  you
+Relay  →  same Telegram chat or Slack thread  →  you
 ```
 
 The dashboard can send the same payload without typing in Telegram.
@@ -48,27 +48,50 @@ To use a **channel or group**, add the bot as an **admin** (it must be allowed t
 
 Relay ignores channel posts that do not mention the bot, so the channel does not trigger a Cursor run on every message.
 
+## Slack (@pocketedge)
+
+Relay listens for **@pocketedge** mentions and replies in the **same thread**.
+
+1. Create a Slack app and install it to your workspace.
+2. Enable **Socket Mode** and copy `SLACK_BOT_TOKEN` (`xoxb-…`) and `SLACK_APP_TOKEN` (`xapp-…`) into `.env.local`.
+3. Under **Event Subscriptions**, subscribe to:
+   - `app_mention`
+   - `message.channels`, `message.groups`, `message.im`, `message.mpim` (for thread follow-ups)
+4. Bot token scopes (minimum):
+   - `app_mentions:read`
+   - `channels:history`, `channels:read`, `groups:history`, `groups:read`
+   - `chat:write`, `files:write`
+   - `im:history`, `mpim:history`
+   - `users:read`
+5. Invite `@pocketedge` to the channels where you want to use it.
+
+**Thread context:** the first `@pocketedge` mention starts a thread job. Later replies in that thread (without tagging again) are treated as follow-ups. Relay fetches the thread history and sends it to Cursor as `thread_context`.
+
+For production without Socket Mode, set `SLACK_SIGNING_SECRET` and point Slack Events to `https://your-host/api/slack/events`.
+
+Set `PUBLIC_URL` if Slack messages include file attachments you want Cursor to download.
+
 ## How the agent replies
 
-Relay polls the Cursor run and sends the last answer to Telegram. Files the agent writes under `artifacts/` (PDF, markdown, images, spreadsheets) are downloaded and sent as Telegram documents. If there are no artifacts and the answer is long, Relay also attaches `report.md`.
+Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. Files the agent writes under `artifacts/` are delivered as documents. If there are no artifacts and the answer is long, Relay also attaches `report.md`.
 
-The automation should **not** POST to Telegram or to `/api/reply`.
+The automation should **not** POST to Telegram, Slack, or `/api/reply`.
 
 Replace the automation prompt with the text on the dashboard (or this):
 
 ```
-You are Relay's Cursor automation. Each run is a Telegram question.
+You are Relay's Cursor automation. Each run is a question from Telegram or Slack.
 
-The webhook payload's "text" field is the user's question. Answer that question in your final message.
+The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation. Answer in your final message.
 If the payload includes files[], download each files[].url immediately (they expire in about an hour) and use those files.
 
-If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ to Telegram.
+If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ back to the same Telegram chat or Slack thread.
 
 PDF libraries are already installed in this environment: fpdf2, Pillow, and reportlab. Import them directly (from fpdf import FPDF). Do not pip install fpdf2 or any other package unless an import actually fails. To write a PDF you can run: python3 tools/pdf_report.py artifacts/report.pdf "Title" "Paragraph"
 
-Do not POST to Telegram, Relay, reply_url, or any other URL.
+Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
-Relay copies your final answer and artifacts to Telegram automatically.
+Relay copies your final answer and artifacts to the user automatically.
 ```
 
 ## Cloud Agent environment (PDF, fpdf2)
@@ -97,8 +120,11 @@ Optional: point Cursor cloud-agent **statusChange** webhooks at `/api/cursor/sta
 | `CURSOR_WEBHOOK_TOKEN` | `Bearer crsr_…` token |
 | `TELEGRAM_BOT_TOKEN` | BotFather token |
 | `TELEGRAM_CHAT_ID` | Optional fixed chat. Otherwise the first `/start` is remembered |
+| `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-…`) |
+| `SLACK_APP_TOKEN` | Slack app-level token for Socket Mode (`xapp-…`) |
+| `SLACK_SIGNING_SECRET` | For HTTPS Events API at `/api/slack/events` |
 | `REPLY_WEBHOOK_SECRET` | Shared secret for `/api/reply` |
-| `PUBLIC_URL` | Optional public origin if you also want `/api/reply` |
+| `PUBLIC_URL` | Optional public origin (`/api/reply`, Slack attachment URLs) |
 | `TELEGRAM_WEBHOOK_SECRET` | Only if you register `https://your-host/api/telegram/webhook` with Telegram |
 | `CURSOR_STATUS_WEBHOOK_SECRET` | Optional HMAC for Cursor status webhooks |
 

@@ -9,6 +9,8 @@ const STORE_PATH = path.join(DATA_DIR, "store.json");
 const emptyStore = (): StoreData => ({
   jobs: [],
   chats: [],
+  slackThreads: {},
+  processedSlackEvents: [],
 });
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -29,8 +31,11 @@ async function readStore(): Promise<StoreData> {
     return {
       jobs: parsed.jobs ?? [],
       chats: parsed.chats ?? [],
+      slackThreads: parsed.slackThreads ?? {},
+      processedSlackEvents: parsed.processedSlackEvents ?? [],
       inbound: parsed.inbound ?? [],
       bot: parsed.bot,
+      slackBot: parsed.slackBot,
       telegramOffset: parsed.telegramOffset,
     };
   } catch {

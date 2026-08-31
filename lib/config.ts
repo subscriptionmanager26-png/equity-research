@@ -13,6 +13,9 @@ export function getConfig() {
   const cursorStatusWebhookSecret = trim(
     process.env.CURSOR_STATUS_WEBHOOK_SECRET,
   );
+  const slackBotToken = trim(process.env.SLACK_BOT_TOKEN);
+  const slackAppToken = trim(process.env.SLACK_APP_TOKEN);
+  const slackSigningSecret = trim(process.env.SLACK_SIGNING_SECRET);
 
   return {
     cursorWebhookUrl,
@@ -23,8 +26,13 @@ export function getConfig() {
     replyWebhookSecret,
     publicUrl,
     cursorStatusWebhookSecret,
+    slackBotToken,
+    slackAppToken,
+    slackSigningSecret,
     cursorConfigured: Boolean(cursorWebhookUrl && cursorWebhookToken),
     telegramConfigured: Boolean(telegramBotToken),
+    slackConfigured: Boolean(slackBotToken),
+    slackSocketConfigured: Boolean(slackBotToken && slackAppToken),
     replyConfigured: Boolean(replyWebhookSecret),
   };
 }
@@ -34,11 +42,14 @@ export function publicStatus() {
   return {
     cursorConfigured: cfg.cursorConfigured,
     telegramConfigured: cfg.telegramConfigured,
+    slackConfigured: cfg.slackConfigured,
+    slackSocketConfigured: cfg.slackSocketConfigured,
     replyConfigured: cfg.replyConfigured,
     publicUrlSet: Boolean(cfg.publicUrl),
     telegramChatIdSet: Boolean(cfg.telegramChatId),
     replyPath: "/api/reply",
     telegramWebhookPath: "/api/telegram/webhook",
+    slackEventsPath: "/api/slack/events",
     cursorStatusPath: "/api/cursor/status",
   };
 }

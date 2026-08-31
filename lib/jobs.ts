@@ -1,10 +1,22 @@
 import { getStore, updateStore } from "@/lib/store";
-import type { InboundMessage, Job, JobEvent, JobSource, TelegramChat } from "@/lib/types";
+import type {
+  InboundMessage,
+  Job,
+  JobEvent,
+  JobSource,
+  SlackThreadRef,
+  TelegramChat,
+} from "@/lib/types";
 
 const MAX_JOBS = 100;
+const MAX_SLACK_EVENT_IDS = 500;
 
 export function newJobId() {
   return `job_${crypto.randomUUID()}`;
+}
+
+export function slackThreadKey(channelId: string, threadTs: string) {
+  return `${channelId}:${threadTs}`;
 }
 
 export async function createJob(input: {
@@ -13,6 +25,11 @@ export async function createJob(input: {
   chatId?: number;
   username?: string;
   displayName?: string;
+  slackChannelId?: string;
+  slackThreadTs?: string;
+  slackUserId?: string;
+  slackMessageTs?: string;
+  threadContext?: string;
   files?: Job["files"];
 }): Promise<Job> {
   const now = new Date().toISOString();
@@ -24,6 +41,11 @@ export async function createJob(input: {
     chatId: input.chatId,
     username: input.username,
     displayName: input.displayName,
+    slackChannelId: input.slackChannelId,
+    slackThreadTs: input.slackThreadTs,
+    slackUserId: input.slackUserId,
+    slackMessageTs: input.slackMessageTs,
+    threadContext: input.threadContext,
     prompt: input.prompt,
     files: input.files,
     status: "queued",
@@ -47,6 +69,14 @@ export async function createJob(input: {
         username: input.username,
         displayName: input.displayName,
         at: now,
+      });
+    }
+    if (input.slackChannelId && input.slackThreadTs) {
+      rememberSlackThreadInStore(data, {
+        channelId: input.slackChannelId,
+        threadTs: input.slackThreadTs,
+        lastJobId: job.id,
+        updatedAt: now,
       });
     }
     return job;
@@ -110,6 +140,48 @@ export async function latestChat(): Promise<TelegramChat | undefined> {
 export async function listChats(): Promise<TelegramChat[]> {
   const data = await getStore();
   return data.chats;
+}
+
+export async function rememberSlackThread(input: {
+  channelId: string;
+  threadTs: string;
+  lastJobId?: string;
+}) {
+  const now = new Date().toISOString();
+  await updateStore((data) => {
+    rememberSlackThreadInStore(data, { ...input, updatedAt: now });
+  });
+}
+
+export async function getSlackThread(
+  channelId: string,
+  threadTs: string,
+): Promise<SlackThreadRef | undefined> {
+  const data = await getStore();
+  return data.slackThreads?.[slackThreadKey(channelId, threadTs)];
+}
+
+export async function markSlackEventProcessed(eventId: string): Promise<boolean> {
+  return updateStore((data) => {
+    data.processedSlackEvents = data.processedSlackEvents ?? [];
+    if (data.processedSlackEvents.includes(eventId)) return false;
+    data.processedSlackEvents.unshift(eventId);
+    data.processedSlackEvents = data.processedSlackEvents.slice(
+      0,
+      MAX_SLACK_EVENT_IDS,
+    );
+    return true;
+  });
+}
+
+function rememberSlackThreadInStore(
+  data: {
+    slackThreads?: Record<string, SlackThreadRef>;
+  },
+  input: SlackThreadRef,
+) {
+  data.slackThreads = data.slackThreads ?? {};
+  data.slackThreads[slackThreadKey(input.channelId, input.threadTs)] = input;
 }
 
 function upsertChat(

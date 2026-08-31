@@ -27,11 +27,15 @@ import type { Job } from "@/lib/types";
 type StatusPayload = {
   cursorConfigured: boolean;
   telegramConfigured: boolean;
+  slackConfigured: boolean;
+  slackSocketConfigured: boolean;
   replyConfigured: boolean;
   publicUrlSet: boolean;
   telegramChatIdSet: boolean;
   replyUrl: string;
+  slackEventsPath: string;
   bot: { username?: string; name?: string } | null;
+  slackBot: { name?: string; userId?: string } | null;
   chats: {
     chatId: number;
     username?: string;
@@ -41,18 +45,18 @@ type StatusPayload = {
   jobCount: number;
 };
 
-const AUTOMATION_PROMPT = `You are Relay's Cursor automation. Each run is a Telegram question.
+const AUTOMATION_PROMPT = `You are Relay's Cursor automation. Each run is a question from Telegram or Slack.
 
-The webhook payload's "text" field is the user's question. Answer that question in your final message.
+The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation. Answer in your final message.
 If the payload includes files[], download each files[].url immediately (they expire in about an hour) and use those files.
 
-If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ to Telegram.
+If the user should receive a file (research report, PDF, spreadsheet, image), write it under artifacts/, for example artifacts/report.pdf or artifacts/report.md. Relay sends every file in artifacts/ back to the same Telegram chat or Slack thread.
 
 PDF libraries are already installed in this environment: fpdf2, Pillow, and reportlab. Import them directly (from fpdf import FPDF). Do not pip install fpdf2 or any other package unless an import actually fails. To write a PDF you can run: python3 tools/pdf_report.py artifacts/report.pdf "Title" "Paragraph"
 
-Do not POST to Telegram, Relay, reply_url, or any other URL.
+Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
-Relay copies your final answer and artifacts to Telegram automatically.`;
+Relay copies your final answer and artifacts to the user automatically.`;
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -196,9 +200,9 @@ export function Dashboard() {
             Relay
           </h1>
           <p className="max-w-xl text-sm leading-6 text-zinc-400">
-            Message your Telegram bot. Relay posts that text to your Cursor
-            automation webhook, waits for the run to finish, and sends the
-            answer (and any artifacts) back to Telegram.
+            Message your Telegram bot or mention @pocketedge in Slack. Relay
+            posts to your Cursor automation, waits for the run to finish, and
+            replies in the same chat or thread.
           </p>
         </div>
         <a
@@ -219,7 +223,7 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatusCard
           title="Cursor webhook"
           ok={Boolean(status?.cursorConfigured)}
@@ -246,17 +250,29 @@ export function Dashboard() {
           }
         />
         <StatusCard
+          title="Slack @pocketedge"
+          ok={Boolean(status?.slackSocketConfigured || status?.slackConfigured)}
+          warn={Boolean(status?.slackConfigured && !status.slackSocketConfigured)}
+          detail={
+            status?.slackSocketConfigured
+              ? status.slackBot?.name
+                ? `${status.slackBot.name} listening via Socket Mode`
+                : "Socket Mode connected — mention @pocketedge in a channel."
+              : status?.slackConfigured
+                ? "Bot token set. Add SLACK_APP_TOKEN for Socket Mode, or register /api/slack/events."
+                : "Set SLACK_BOT_TOKEN and SLACK_APP_TOKEN to trigger from Slack."
+          }
+        />
+        <StatusCard
           title="Agent reply"
-          ok={Boolean(status?.telegramConfigured && status.chats.length)}
-          warn={Boolean(
-            status?.telegramConfigured && !status.chats.length && !status.publicUrlSet,
+          ok={Boolean(
+            (status?.telegramConfigured && status.chats.length) ||
+              status?.slackConfigured,
           )}
           detail={
-            status?.telegramConfigured && status.chats.length
-              ? "The agent replies in Telegram with sendMessage. PUBLIC_URL is optional."
-              : status?.telegramConfigured
-                ? "Bot is connected. Send /start in Telegram so Relay knows which chat to reply to."
-                : "Add TELEGRAM_BOT_TOKEN so the agent can reply in Telegram."
+            status?.slackConfigured || status?.telegramConfigured
+              ? "Relay delivers Cursor answers to Telegram chats and Slack threads."
+              : "Configure Telegram and/or Slack so Relay can deliver answers."
           }
         />
       </section>
@@ -430,7 +446,9 @@ export function Dashboard() {
                       <p className="mt-2 text-xs text-zinc-500">
                         {job.source === "telegram"
                           ? `Telegram${job.displayName ? ` · ${job.displayName}` : ""}`
-                          : "Dashboard"}
+                          : job.source === "slack"
+                            ? `Slack${job.slackChannelId ? ` · ${job.slackChannelId}` : ""}${job.displayName ? ` · ${job.displayName}` : ""}`
+                            : "Dashboard"}
                         {job.events[0] ? ` · ${job.events[0].detail}` : ""}
                       </p>
                     </li>

@@ -4,7 +4,7 @@ export type JobStatus =
   | "replied"
   | "error";
 
-export type JobSource = "telegram" | "dashboard";
+export type JobSource = "telegram" | "dashboard" | "slack";
 
 export type JobEvent = {
   at: string;
@@ -17,6 +17,8 @@ export type JobFile = {
   name: string;
   mime?: string;
   size?: number;
+  /** Pre-resolved download URL (Slack private URLs). */
+  url?: string;
 };
 
 export type JobReply = {
@@ -24,6 +26,7 @@ export type JobReply = {
   status: string;
   receivedAt: string;
   telegramMessageId?: number;
+  slackMessageTs?: string;
   files?: string[];
 };
 
@@ -35,7 +38,12 @@ export type Job = {
   chatId?: number;
   username?: string;
   displayName?: string;
+  slackChannelId?: string;
+  slackThreadTs?: string;
+  slackUserId?: string;
+  slackMessageTs?: string;
   prompt: string;
+  threadContext?: string;
   files?: JobFile[];
   status: JobStatus;
   cursorHttpStatus?: number;
@@ -54,13 +62,29 @@ export type TelegramChat = {
   lastMessageAt: string;
 };
 
+export type SlackThreadRef = {
+  channelId: string;
+  threadTs: string;
+  lastJobId?: string;
+  updatedAt: string;
+};
+
 export type StoreData = {
   jobs: Job[];
   chats: TelegramChat[];
+  slackThreads?: Record<string, SlackThreadRef>;
+  processedSlackEvents?: string[];
   inbound?: InboundMessage[];
   bot?: {
     id: number;
     username?: string;
+    name?: string;
+    checkedAt: string;
+  };
+  slackBot?: {
+    id: string;
+    userId: string;
+    teamId?: string;
     name?: string;
     checkedAt: string;
   };
@@ -73,4 +97,22 @@ export type InboundMessage = {
   text?: string;
   kind: string;
   files?: string[];
+};
+
+export type SlackInboundEvent = {
+  type: string;
+  user?: string;
+  text?: string;
+  ts: string;
+  thread_ts?: string;
+  channel: string;
+  bot_id?: string;
+  subtype?: string;
+  files?: {
+    id: string;
+    name?: string;
+    mimetype?: string;
+    size?: number;
+    url_private_download?: string;
+  }[];
 };
