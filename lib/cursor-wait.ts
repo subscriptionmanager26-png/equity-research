@@ -5,6 +5,7 @@ import {
   getAgent,
   getAgentAnswer,
 } from "@/lib/cursor-api";
+import { userRequestedPdf } from "@/lib/automation-prompt";
 import {
   collectAgentFilesWithRetry,
   mentionedArtifactsMissing,
@@ -77,9 +78,13 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
 
       const answer = await getAgentAnswer(agentId);
       const failed = agentFailed(agent.status);
-      const files = failed
+      const allowPdf = userRequestedPdf(job?.prompt ?? "");
+      const collected = failed
         ? []
         : await collectAgentFilesWithRetry(agentId, answer).catch(() => []);
+      const files = allowPdf
+        ? collected
+        : collected.filter((file) => !/\.pdf$/i.test(file.name));
       const link = agent.url ?? agent.target?.url ?? `https://cursor.com/agents/${agentId}`;
       let message =
         answer ||

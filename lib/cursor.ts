@@ -1,5 +1,6 @@
 import { getConfig } from "@/lib/config";
 import { resolveJobFileForCursor } from "@/lib/attachments";
+import { AUTOMATION_PROMPT } from "@/lib/automation-prompt";
 import type { Job } from "@/lib/types";
 
 export function replyUrl() {
@@ -18,10 +19,12 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
   const fileLine = hasFiles
     ? " Download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload."
     : "";
-  const artifactLine = ` For reports or long answers, write a markdown file under artifacts/ (for example artifacts/report.md) using the Write tool. Prefer markdown over PDF — it is faster and Relay delivers .md files to Telegram and Slack. Relay only sends files registered under artifacts/. Verify the file exists before saying it is attached.`;
+  const artifactLine = ` For reports: put the FULL answer only in artifacts/report.md (Write tool). Your final chat message must be a 1–2 sentence summary — never paste the full report. Do NOT create PDF unless the user explicitly asks for PDF. Relay delivers .md files plus your short summary.`;
   const noPostLine = ` Do not POST to ${channel}, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or ${channel}.`;
   return `Answer the user's text.${fileLine}${artifactLine}${noPostLine}`;
 }
+
+export { AUTOMATION_PROMPT };
 
 export async function buildCursorPayload(job: Job) {
   const files = [];

@@ -66,26 +66,13 @@ Slack and Telegram stay fully separate — answers never cross platforms.
 
 ## How the agent replies
 
-Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. Reports should be markdown files under `artifacts/` (for example `artifacts/report.md`). Answers longer than ~500 characters are auto-wrapped as `report.md` instead of a long chat message (short replies stay as plain text).
+Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. For reports, the agent writes `artifacts/report.md` and Relay delivers **only the markdown file plus a short summary** in chat — not the full report text. PDFs are omitted unless the user explicitly asks for a PDF. Quick answers under ~500 characters stay as plain text.
 
 **Slack attachments:** Relay can send files to Slack with your user token (`files:write`). Slack → Cursor file sharing works via inline base64 when `PUBLIC_URL` is unset, or via download URLs when it is set.
 
 The automation should **not** POST to Telegram, Slack, or `/api/reply`.
 
-Replace the automation prompt with the text on the dashboard (or this):
-
-```
-You are Relay's Cursor automation. Each run is a question from Telegram or Slack.
-
-The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation.
-If the payload includes files[], download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload.
-
-For research reports or long answers, write a markdown file under artifacts/ — for example artifacts/report.md — using the Write tool. Prefer markdown over PDF; it is faster and Relay delivers .md files back to the same Telegram chat or Slack thread. Keep your final chat message short (a one-line summary is enough). Relay sends artifacts/ files automatically.
-
-Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
-Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
-Relay copies your final answer and artifacts to the user automatically.
-```
+Replace the automation prompt with the text on the dashboard (copy from the Relay UI — it lives in `lib/automation-prompt.ts`).
 
 ## Cloud Agent environment
 

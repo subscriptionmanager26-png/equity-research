@@ -22,7 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import type { Job } from "@/lib/types";
+import { AUTOMATION_PROMPT } from "@/lib/automation-prompt";
 
 type StatusPayload = {
   cursorConfigured: boolean;
@@ -50,16 +50,6 @@ type StatusPayload = {
   jobCount: number;
 };
 
-const AUTOMATION_PROMPT = `You are Relay's Cursor automation. Each run is a question from Telegram or Slack.
-
-The webhook payload's "text" field is the user's question. If thread_context is present, it is the same Slack thread — treat it as prior conversation.
-If the payload includes files[], download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload.
-
-For research reports or long answers, write a markdown file under artifacts/ — for example artifacts/report.md — using the Write tool. Prefer markdown over PDF; it is faster and Relay delivers .md files back to the same Telegram chat or Slack thread. Keep your final chat message short (a one-line summary is enough). Relay sends artifacts/ files automatically.
-
-Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
-Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
-Relay copies your final answer and artifacts to the user automatically.`;
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -356,17 +346,13 @@ export function Dashboard() {
                   Reports as markdown (not PDF)
                 </p>
                 <p className="mt-2 text-xs text-zinc-400">
-                  Have the agent write{" "}
+                  The agent writes{" "}
                   <code className="font-mono text-[11px] text-sky-200">
                     artifacts/report.md
                   </code>{" "}
-                  with the Write tool. Relay delivers the .md file to Telegram
-                  or Slack. Long inline answers are also auto-wrapped as{" "}
-                  <code className="font-mono text-[11px] text-sky-200">
-                    report.md
-                  </code>
-                  . No PDF generation needed — faster and easier to read in chat
-                  apps.
+                  with the full report. Relay sends only that file plus a
+                  1–2 sentence summary in chat — not the full text. PDFs are
+                  skipped unless the user asks for one.
                 </p>
               </div>
             </CardContent>

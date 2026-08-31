@@ -4,7 +4,7 @@ import { getConfig } from "@/lib/config";
 import { dispatchToCursor } from "@/lib/cursor";
 import { extractAgentId } from "@/lib/cursor-api";
 import {
-  formatReplyForDelivery,
+  formatReplyForJob,
   markdownFileCaption,
   type DeliveryFile,
 } from "@/lib/delivery-format";
@@ -123,7 +123,11 @@ export async function deliverReply(input: {
   const job =
     input.job ?? (input.jobId ? await getJob(input.jobId) : undefined);
 
-  const formatted = formatReplyForDelivery(input.message, input.files ?? []);
+  const formatted = formatReplyForJob(
+    input.message,
+    input.files ?? [],
+    job?.prompt,
+  );
 
   if (job?.source === "slack" && job.slackChannelId && job.slackThreadTs) {
     return deliverSlackReply(job, formatted);
