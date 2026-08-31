@@ -206,6 +206,8 @@ export function isSlackBotMessage(
   botUserId?: string,
 ) {
   if (event.bot_id) return true;
+  // User-token mode posts as the human; only real bot_id traffic is bot traffic.
+  if (getConfig().slackReplyAsUser) return false;
   if (botUserId && event.user === botUserId) return true;
   return false;
 }

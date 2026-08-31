@@ -44,15 +44,22 @@ export async function startSlackUserPoller() {
 
 async function loop(actorUserId: string) {
   while (true) {
-    try {
-      await pollDirectMessages(actorUserId);
-      await pollSearchTriggers(actorUserId);
-      await pollTrackedThreads(actorUserId);
-      await pollConfiguredChannels(actorUserId);
-    } catch (error) {
-      console.error("[relay] Slack user poll failed", error);
-    }
+    await runPollStep("search", () => pollSearchTriggers(actorUserId));
+    await runPollStep("dms", () => pollDirectMessages(actorUserId));
+    await runPollStep("threads", () => pollTrackedThreads(actorUserId));
+    await runPollStep("channels", () => pollConfiguredChannels(actorUserId));
     await sleep(POLL_MS);
+  }
+}
+
+async function runPollStep(
+  label: string,
+  step: () => Promise<void>,
+) {
+  try {
+    await step();
+  } catch (error) {
+    console.error(`[relay] Slack ${label} poll failed`, error);
   }
 }
 
@@ -62,7 +69,7 @@ async function pollDirectMessages(actorUserId: string) {
   let channels: string[] = [];
   try {
     const result = await client.users.conversations({
-      types: "im,mpim",
+      types: "im",
       exclude_archived: true,
       limit: 50,
     });
@@ -90,7 +97,7 @@ async function pollSearchTriggers(actorUserId: string) {
   const cfg = getConfig();
   const client = getSlackClient();
   const cursor =
-    (await getSlackSearchCursor()) ?? `${Date.now() / 1000 - 30}`;
+    (await getSlackSearchCursor()) ?? `${Date.now() / 1000 - 3600}`;
 
   try {
     const result = await client.search.messages({
@@ -215,13 +222,24 @@ async function pollConfiguredChannels(actorUserId: string) {
 }
 
 async function pollChannel(channelId: string, actorUserId: string) {
-  const cursor = (await getSlackPollCursor(channelId)) ?? `${Date.now() / 1000 - 5}`;
+  const cursor = (await getSlackPollCursor(channelId)) ?? `${Date.now() / 1000 - 3600}`;
   const client = getSlackClient();
-  const result = await client.conversations.history({
-    channel: channelId,
-    oldest: cursor,
-    limit: 50,
-  });
+  let result;
+  try {
+    result = await client.conversations.history({
+      channel: channelId,
+      oldest: cursor,
+      limit: 50,
+    });
+  } catch (error) {
+    const missing = readMissingScope(error);
+    if (missing) {
+      console.warn(
+        `[relay] Slack channel ${channelId} needs scope ${missing}`,
+      );
+    }
+    return;
+  }
   if (!result.ok || !result.messages?.length) return;
 
   let newestTs = cursor;
@@ -266,6 +284,10 @@ async function processMessage(event: SlackInboundEvent, actorUserId: string) {
   if (ownMessage && !messageTriggersRelay(event.text ?? "")) return;
   if (!ownMessage && isSlackBotMessage(event, actorUserId)) return;
   if (shouldIgnoreSlackSubtype(event.subtype)) return;
+
+  console.info(
+    `[relay] Slack trigger in ${event.channel} (${event.type}): ${(event.text ?? "").slice(0, 80)}`,
+  );
 
   await handleSlackEvent(event).catch((error) => {
     console.error("[relay] Slack message handler failed", error);
