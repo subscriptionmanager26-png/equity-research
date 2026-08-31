@@ -76,7 +76,11 @@ Replace the automation prompt with the text on the dashboard (copy from the Rela
 
 ## Cloud Agent environment
 
-Point the Cursor automation at **this repository** so runs check out Relay (including `.cursor/environment.json`). Optional: save the environment and run one build so `npm install` is pre-baked.
+Point the Cursor automation at **this repository** so runs check out Relay (including `.cursor/environment.json` and **project skills**). Personal Cursor skills on your laptop are **not** copied to cloud VMs.
+
+The **financial-analysis** skill lives at `.cursor/skills/research/financial-analysis/SKILL.md` (also linked from `.agents/skills/`). Equity/stock/ETF questions should follow it. Overview: [docs/financial-analysis/README.md](docs/financial-analysis/README.md).
+
+Optional: save the environment and run one build so `npm install` is pre-baked.
 
 Optional: point Cursor cloud-agent **statusChange** webhooks at `/api/cursor/status`. If `CURSOR_STATUS_WEBHOOK_SECRET` is set, Relay verifies `X-Webhook-Signature`.
 

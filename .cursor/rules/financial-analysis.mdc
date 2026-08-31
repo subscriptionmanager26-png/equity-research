@@ -1,0 +1,21 @@
+---
+description: Require the financial-analysis skill for stocks, companies, ETFs, and other financial instruments
+alwaysApply: true
+---
+
+# Financial instrument questions
+
+If the user asks about a **stock, ticker, company, ETF, mutual fund, bond, earnings, filings, or any financial instrument**, you MUST follow the project skill:
+
+`.cursor/skills/research/financial-analysis/SKILL.md`
+
+Load its `references/` as needed (India sources, thesis/memo template, data-pull recipe). Do not invent a competing report format.
+
+## Relay delivery (this repo)
+
+Cloud agents in this repo answer Telegram/Slack via Relay:
+
+1. Put the **full** analysis only in `artifacts/report.md`.
+2. Your **final chat message** is a **1–2 sentence summary** (recommendation + one key takeaway). Never paste the full report in chat.
+3. **Do not create PDFs** unless the user explicitly asks for a PDF. Skip `templates/build_pdf.py` by default.
+4. Persist working notes under `~/research/<TICKER>/` as the skill describes; the user-facing file is still `artifacts/report.md`.

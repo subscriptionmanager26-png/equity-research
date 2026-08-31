@@ -343,16 +343,21 @@ export function Dashboard() {
               </pre>
               <div className="rounded-lg border border-sky-400/20 bg-sky-400/5 px-3 py-3 text-sm leading-6 text-zinc-300">
                 <p className="font-medium text-sky-100">
-                  Reports as markdown (not PDF)
+                  Financial-analysis skill (in this repo)
                 </p>
                 <p className="mt-2 text-xs text-zinc-400">
-                  The agent writes{" "}
+                  Cloud agents load{" "}
+                  <code className="font-mono text-[11px] text-sky-200">
+                    .cursor/skills/research/financial-analysis/SKILL.md
+                  </code>
+                  . Point the Cursor automation at{" "}
+                  <strong className="font-medium text-zinc-300">this
+                  repository</strong>
+                  , paste the prompt above, and Save. Reports go to{" "}
                   <code className="font-mono text-[11px] text-sky-200">
                     artifacts/report.md
                   </code>{" "}
-                  with the full report. Relay sends only that file plus a
-                  1–2 sentence summary in chat — not the full text. PDFs are
-                  skipped unless the user asks for one.
+                  plus a short chat summary — no PDF unless asked.
                 </p>
               </div>
             </CardContent>
