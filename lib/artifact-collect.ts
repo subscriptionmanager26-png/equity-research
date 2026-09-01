@@ -32,17 +32,31 @@ export function normalizeArtifactPath(path: string) {
   return `artifacts/${trimmed.replace(/^\.?\//, "")}`;
 }
 
-/** Pull artifact paths mentioned anywhere in the agent run text. */
+/** Skip template/example paths from automation prompts. */
+export function isConcreteArtifactPath(path: string) {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  if (!name || name.includes("<") || name.includes(">")) return false;
+  if (name === "report.md" || name === "-report.md") return false;
+  const base = name.replace(/\.(md|markdown|pdf|txt)$/i, "");
+  return base.length >= 4;
+}
+
+/** Pull artifact paths mentioned in assistant output. */
 export function extractMentionedArtifactPaths(text: string) {
   const paths = new Set<string>();
   for (const match of text.matchAll(/`(artifacts\/[^`]+)`/gi)) {
+    paths.add(normalizeArtifactPath(match[1]));
+  }
+  for (const match of text.matchAll(
+    /\*\*ARTIFACT:\*\*\s*`?(artifacts\/[^`\s]+)`?/gi,
+  )) {
     paths.add(normalizeArtifactPath(match[1]));
   }
   for (const match of text.matchAll(ARTIFACT_PATH_RE)) {
     const raw = match[1];
     if (raw) paths.add(normalizeArtifactPath(raw));
   }
-  return [...paths];
+  return [...paths].filter(isConcreteArtifactPath);
 }
 
 export function mentionedArtifactsMissing(

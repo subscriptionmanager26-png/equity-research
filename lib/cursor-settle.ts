@@ -3,12 +3,13 @@ import {
   extractAgentId,
   getAgent,
   getAgentConversation,
-  getConversationText,
   getFinalAssistantAnswer,
 } from "@/lib/cursor-api";
 import { userRequestedPdf } from "@/lib/automation-prompt";
+import { followUpArtifacts } from "@/lib/artifact-followup";
 import {
   collectAgentFilesWithRetry,
+  extractMentionedArtifactPaths,
   mentionedArtifactsMissing,
 } from "@/lib/artifact-collect";
 import { findThreadReportResendFallback } from "@/lib/report-fallback";
@@ -117,7 +118,6 @@ export async function settleAgentJob(
     const agent = await getAgent(agentId);
     const conversation = await getAgentConversation(agentId);
     const messages = conversation.messages ?? [];
-    const conversationText = getConversationText(messages);
     const assistantText = assistantConversationText(messages);
     const answer = getFinalAssistantAnswer(messages);
     const failed = agentFailed(agent.status);
@@ -150,9 +150,9 @@ export async function settleAgentJob(
       }
     }
 
-    const missingArtifacts = mentionedArtifactsMissing(conversationText, files);
+    const missingArtifacts = mentionedArtifactsMissing(assistantText, files);
     if (missingArtifacts.length && !failed && files.length === 0) {
-      message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API, so Relay could not attach ${missingArtifacts.length === 1 ? "it" : "them"}. Open ${link} to view or download the file._`;
+      message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API yet. Relay will retry the file attachment — or open ${link} to download it._`;
     }
 
     const delivery = await deliverReply({
@@ -190,6 +190,13 @@ export async function settleAgentJob(
     console.info(
       `[relay] Settled ${jobId} via ${trigger} (${agentId}) — ${delivery.files.length} file(s)`,
     );
+
+    if (!failed && delivery.files.length === 0 && extractMentionedArtifactPaths(assistantText).length) {
+      void followUpArtifacts(jobId, agentId, assistantText, job).catch((error) => {
+        console.error(`[relay] Artifact follow-up failed for ${jobId}`, error);
+      });
+    }
+
     return { ok: true };
   } catch (error) {
     console.error(`[relay] settleAgentJob failed for ${jobId}`, error);

@@ -94,7 +94,7 @@ The **financial-analysis** skill lives at `.cursor/skills/research/financial-ana
 
 Optional: save the environment and run one build so `npm install` is pre-baked.
 
-Optional: point Cursor cloud-agent **statusChange** webhooks at `{PUBLIC_URL}/api/cursor/status` — **recommended for fast delivery**. Set `PUBLIC_URL` and `CURSOR_STATUS_WEBHOOK_SECRET`; Relay verifies `X-Webhook-Signature`.
+Optional: point Cursor cloud-agent **statusChange** webhooks at `{PUBLIC_URL}/api/cursor/status` — **recommended for fast delivery**. Set `CURSOR_STATUS_WEBHOOK_SECRET`; Relay verifies `X-Webhook-Signature`. On **Vercel**, `PUBLIC_URL` is automatic — see [docs/DEPLOY_VERCEL.md](docs/DEPLOY_VERCEL.md).
 
 ## Environment
 
