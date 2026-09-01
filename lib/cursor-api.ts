@@ -23,6 +23,32 @@ async function cursorGet<T>(path: string): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+export async function cursorPost<T>(
+  path: string,
+  body: unknown,
+): Promise<{ ok: boolean; status: number; body: T | unknown }> {
+  const token = apiToken();
+  if (!token) throw new Error("Cursor API token is not configured");
+  const response = await fetch(`${API}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+  const text = await response.text();
+  let parsed: unknown = text;
+  try {
+    parsed = JSON.parse(text) as T;
+  } catch {
+    // keep raw text
+  }
+  return { ok: response.ok, status: response.status, body: parsed };
+}
+
 export function normalizeCursorAgentId(id: string) {
   const trimmed = id.trim();
   if (trimmed.startsWith("bc_")) return `bc-${trimmed.slice(3)}`;
@@ -40,6 +66,10 @@ export function extractAgentId(body: unknown): string | undefined {
         return normalizeCursorAgentId(id);
       }
     }
+  }
+  if (record.agent && typeof record.agent === "object") {
+    const nested = extractAgentId(record.agent);
+    if (nested) return nested;
   }
   if (record.data && typeof record.data === "object") {
     return extractAgentId(record.data);

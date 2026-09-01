@@ -1,16 +1,12 @@
 # Relay
 
-A small bridge between **Telegram**, **Slack**, and a **Cursor automation webhook**.
+A small bridge between **Telegram**, **Slack**, and a **Cursor cloud agent**.
 
-You already have an automation that starts when something POSTs to:
-
-`https://api2.cursor.sh/automations/webhook/<id>`
-
-Cursor does not have a built-in way to talk back on Telegram or Slack. Relay is that return path.
+Relay launches a cloud agent against this repository via the Cloud Agents API. It does not depend on a Cursor Automation staying enabled.
 
 ```
-Telegram or Slack  →  Relay  →  Cursor automation webhook
-Relay polls Cursor until the run finishes
+Telegram or Slack  →  Relay  →  POST /v0/agents (this repo)
+Relay receives the Cursor status webhook (or polls)
 Relay  →  same Telegram chat or Slack thread  →  you
 ```
 
@@ -19,7 +15,7 @@ Relay does not depend on the cloud agent calling Telegram itself.
 
 ## What you need
 
-1. The Cursor automation **on**. The automation named **Test on Slack** was off when this project was created — turn it on at [cursor.com/automations](https://cursor.com/automations).
+1. A Cursor API key (`CURSOR_WEBHOOK_TOKEN`) from [cursor.com/dashboard](https://cursor.com/dashboard) → API Keys.
 2. A Telegram bot token from [@BotFather](https://t.me/BotFather) in `TELEGRAM_BOT_TOKEN`.
 3. Message the bot `/start` once so Relay stores your chat id.
 
@@ -74,7 +70,7 @@ Relay polls the Cursor run as a **fallback**, but for fast delivery you should e
 2. Generate a secret (32+ chars) and set `CURSOR_STATUS_WEBHOOK_SECRET` in `.env.local`.
 3. Restart Relay.
 
-When both are set, Relay **automatically attaches** `{ url, secret }` to every Cursor automation dispatch — you do **not** need to configure a global webhook in the Cursor dashboard unless you launch agents outside Relay.
+When both are set, Relay **automatically attaches** `{ url, secret }` to every cloud-agent create — you do **not** need to configure a global webhook in the Cursor dashboard unless you launch agents outside Relay.
 
 Optional: you can also add `{PUBLIC_URL}/api/cursor/status` in Cursor → Cloud Agents → Webhooks for agents started elsewhere.
 
@@ -82,13 +78,13 @@ Relay matches the webhook's agent `id` to the job, fetches conversation + artifa
 
 **Slack attachments:** Relay can send files to Slack with your user token (`files:write`). Slack → Cursor file sharing works via inline base64 when `PUBLIC_URL` is unset, or via download URLs when it is set.
 
-The automation should **not** POST to Telegram, Slack, or `/api/reply`.
+The cloud agent should **not** POST to Telegram, Slack, or `/api/reply`.
 
-Replace the automation prompt with the text on the dashboard (copy from the Relay UI — it lives in `lib/automation-prompt.ts`).
+The prompt is `lib/automation-prompt.ts` and is sent as Cloud Agents `prompt.text`.
 
 ## Cloud Agent environment
 
-Point the Cursor automation at **this repository** so runs check out Relay (including `.cursor/environment.json` and **project skills**). Personal Cursor skills on your laptop are **not** copied to cloud VMs.
+Cloud agents check out **this repository** (`CURSOR_AGENT_REPOSITORY`, default Origin URL) so runs include `.cursor/environment.json` and **project skills**. Personal Cursor skills on your laptop are **not** copied to cloud VMs.
 
 The **financial-analysis** skill lives at `.cursor/skills/research/financial-analysis/SKILL.md` (also linked from `.agents/skills/`). Equity/stock/ETF questions should follow it. Overview: [docs/financial-analysis/README.md](docs/financial-analysis/README.md).
 
@@ -100,8 +96,8 @@ Optional: point Cursor cloud-agent **statusChange** webhooks at `{PUBLIC_URL}/ap
 
 | Variable | Purpose |
 | --- | --- |
-| `CURSOR_WEBHOOK_URL` | Automation trigger URL |
-| `CURSOR_WEBHOOK_TOKEN` | `Bearer crsr_…` token |
+| `CURSOR_WEBHOOK_TOKEN` | Cursor API key (`crsr_…`) |
+| `CURSOR_WEBHOOK_URL` | Optional Automations webhook; unused unless `CURSOR_USE_AUTOMATION_WEBHOOK=true` |
 | `TELEGRAM_BOT_TOKEN` | BotFather token |
 | `TELEGRAM_CHAT_ID` | Optional fixed chat. Otherwise the first `/start` is remembered |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-…`) |

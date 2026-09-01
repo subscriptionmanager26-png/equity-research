@@ -56,7 +56,7 @@ export function getConfig() {
     slackMentionUserId,
     slackChannelIds,
     slackApiToken,
-    cursorConfigured: Boolean(cursorWebhookUrl && cursorWebhookToken),
+    cursorConfigured: Boolean(cursorWebhookToken),
     telegramConfigured: Boolean(telegramBotToken),
     slackConfigured: Boolean(slackApiToken),
     slackBotConfigured: Boolean(slackBotToken),

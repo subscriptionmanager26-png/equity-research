@@ -222,12 +222,12 @@ export function Dashboard() {
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatusCard
-          title="Cursor webhook"
+          title="Cursor cloud agent"
           ok={Boolean(status?.cursorConfigured)}
           detail={
             status?.cursorConfigured
-              ? "Bearer token is loaded. Turn the automation on if runs stay silent."
-              : "Set CURSOR_WEBHOOK_URL and CURSOR_WEBHOOK_TOKEN in .env.local"
+              ? "API token loaded. Relay launches a cloud agent on this repo for each message."
+              : "Set CURSOR_WEBHOOK_TOKEN in .env.local (Cursor API key)."
           }
         />
         <StatusCard

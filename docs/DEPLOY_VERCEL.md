@@ -36,8 +36,8 @@ In Vercel → **Settings** → **Environment Variables**, add:
 
 | Variable | Required |
 |----------|----------|
-| `CURSOR_WEBHOOK_URL` | Yes |
-| `CURSOR_WEBHOOK_TOKEN` | Yes |
+| `CURSOR_WEBHOOK_TOKEN` | Yes (Cursor API key) |
+| `CURSOR_WEBHOOK_URL` | No (only if `CURSOR_USE_AUTOMATION_WEBHOOK=true`) |
 | `CURSOR_STATUS_WEBHOOK_SECRET` | Yes (32+ chars) |
 | `TELEGRAM_BOT_TOKEN` | Yes |
 | `TELEGRAM_WEBHOOK_SECRET` | Recommended |

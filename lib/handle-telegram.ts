@@ -61,10 +61,10 @@ export async function handleTelegramMessage(message: TelegramMessage) {
         privateChat
           ? "Send a task in plain text, or attach a file with a caption."
           : `In this channel, tag ${handle} with the task. I only run when mentioned.`,
-        "I post it to your Cursor automation, and the agent replies here.",
+        "I post it to a Cursor cloud agent in this repo, and the agent replies here.",
         cursorConfigured
-          ? "Cursor webhook: configured."
-          : "Cursor webhook: missing. Set CURSOR_WEBHOOK_URL and CURSOR_WEBHOOK_TOKEN.",
+          ? "Cursor cloud agent API: configured."
+          : "Cursor API: missing. Set CURSOR_WEBHOOK_TOKEN.",
         "Commands: /start, /help",
       ].join("\n"),
     }).catch(() => undefined);

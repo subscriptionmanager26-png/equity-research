@@ -11,10 +11,17 @@ describe("extractAgentId", () => {
     );
   });
 
-  it("reads nested automation responses", () => {
+  it("reads nested automation and v1 create responses", () => {
     assert.equal(
       extractAgentId({ data: { backgroundComposerId: "bc-deadbeef" } }),
       "bc-deadbeef",
+    );
+    assert.equal(
+      extractAgentId({
+        agent: { id: "bc-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" },
+        run: { id: "run-1" },
+      }),
+      "bc-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     );
   });
 });

@@ -68,9 +68,9 @@ export async function ingestAndDispatch(input: {
         },
       );
       await notifyJobFailure(job, [
-        "I reached Cursor, but the automation did not accept the request.",
+        "I reached Cursor, but the cloud agent did not start.",
         `${detail}.`,
-        "Turn the automation on at cursor.com/automations, then send this again.",
+        "Relay launches agents via the Cloud Agents API (not the disabled automation).",
       ].join(" "));
       return (await getJob(job.id)) ?? job;
     }
@@ -81,8 +81,8 @@ export async function ingestAndDispatch(input: {
       {
         type: "dispatched",
         detail: agentId
-          ? `Posted to Cursor automation (${agentId})`
-          : `Posted to Cursor automation (HTTP ${result.status})`,
+          ? `Started Cursor cloud agent (${agentId})`
+          : `Started Cursor cloud agent (HTTP ${result.status})`,
       },
       {
         status: "dispatched",
@@ -281,13 +281,20 @@ function resolveDeliveryChatId(input: {
 }
 
 function cursorErrorDetail(status: number, body: unknown) {
-  if (body && typeof body === "object" && "error" in body) {
-    const message = (body as { error?: unknown }).error;
-    if (typeof message === "string" && message.trim()) {
-      return message.trim();
+  if (body && typeof body === "object") {
+    const record = body as { error?: unknown; message?: unknown };
+    if (typeof record.error === "string" && record.error.trim()) {
+      return record.error.trim();
+    }
+    if (record.error && typeof record.error === "object" && "message" in record.error) {
+      const nested = (record.error as { message?: unknown }).message;
+      if (typeof nested === "string" && nested.trim()) return nested.trim();
+    }
+    if (typeof record.message === "string" && record.message.trim()) {
+      return record.message.trim();
     }
   }
-  return `Cursor webhook returned HTTP ${status}`;
+  return `Cursor API returned HTTP ${status}`;
 }
 
 export function timingSafeEqual(a: string, b: string) {
