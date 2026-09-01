@@ -1,3 +1,4 @@
+import { continueAfterResponse } from "@/lib/after-response";
 import { getConfig } from "@/lib/config";
 import { handleSlackEvent, isRelaySlackOutbound, isSlackThreadReply } from "@/lib/handle-slack";
 import {
@@ -23,7 +24,8 @@ declare global {
 }
 
 const POLL_MS = 3000;
-const MIN_POLL_GAP_MS = 12_000;
+const MIN_POLL_GAP_MS = 8_000;
+const SCAN_EVERY_MS = 8_000;
 
 export async function startSlackUserPoller() {
   if (globalThis.__relaySlackUserPoller?.started) return;
@@ -59,10 +61,35 @@ export async function pollSlackOnce(options?: { force?: boolean }) {
   }
   const actor = await getSlackBotIdentity();
   await runPollStep("search", () => pollSearchTriggers(actor.userId));
-  await runPollStep("dms", () => pollDirectMessages(actor.userId));
   await runPollStep("threads", () => pollTrackedThreads(actor.userId));
   await runPollStep("channels", () => pollConfiguredChannels(actor.userId));
   return { ok: true, actor: actor.name ?? actor.userId };
+}
+
+/** Start / continue the user-token mention scan (no bot invite required). */
+export async function kickSlackMentionScan() {
+  const cfg = getConfig();
+  if (!cfg.slackUserPollConfigured) return;
+  const origin = cfg.publicUrl;
+  if (!origin) {
+    await pollSlackOnce().catch((error) => {
+      console.error("[relay] Slack mention scan failed", error);
+    });
+    return;
+  }
+  const secret = process.env.CRON_SECRET?.trim();
+  await fetch(`${origin}/api/slack/poll`, {
+    headers: secret ? { Authorization: `Bearer ${secret}` } : undefined,
+    cache: "no-store",
+    signal: AbortSignal.timeout(4_000),
+  }).catch(() => undefined);
+}
+
+export function scheduleNextSlackMentionScan() {
+  continueAfterResponse(async () => {
+    await sleep(SCAN_EVERY_MS);
+    await kickSlackMentionScan();
+  });
 }
 
 async function loop(actorUserId: string) {
@@ -124,10 +151,10 @@ async function pollSearchTriggers(actorUserId: string) {
 
   try {
     const result = await client.search.messages({
-      query: cfg.slackTriggerWord,
+      query: `${cfg.slackTriggerWord} OR @${cfg.slackTriggerWord}`,
       sort: "timestamp",
       sort_dir: "desc",
-      count: 20,
+      count: 50,
     });
     if (!result.ok || !result.messages?.matches?.length) return;
 

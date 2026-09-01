@@ -155,13 +155,7 @@ export async function sendSlackMessage(input: {
   const chunks = splitSlackText(input.text);
   let lastTs: string | undefined;
   for (const chunk of chunks) {
-    const thread =
-      input.threadTs
-        ? {
-            thread_ts: input.threadTs,
-            reply_broadcast: input.channelId.startsWith("D"),
-          }
-        : {};
+    const thread = input.threadTs ? { thread_ts: input.threadTs } : {};
     let result = await getSlackClient().chat.postMessage({
       channel: input.channelId,
       text: chunk,

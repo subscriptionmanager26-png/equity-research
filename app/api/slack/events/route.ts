@@ -6,7 +6,7 @@ import { watchDispatchedJob } from "@/lib/cursor-wait";
 import { handleSlackEvent } from "@/lib/handle-slack";
 import { getJob, markSlackEventProcessed } from "@/lib/jobs";
 import { verifySlackSignature } from "@/lib/slack";
-import { pollSlackOnce } from "@/lib/slack-user-poller";
+import { kickSlackMentionScan } from "@/lib/slack-user-poller";
 import type { SlackInboundEvent } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -69,9 +69,7 @@ export async function POST(request: Request) {
   }
 
   continueAfterResponse(async () => {
-    await pollSlackOnce().catch((error) => {
-      console.error("[relay] Slack user poll after event failed", error);
-    });
+    await kickSlackMentionScan();
   });
 
   return NextResponse.json({ ok: true });

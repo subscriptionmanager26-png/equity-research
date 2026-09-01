@@ -46,15 +46,13 @@ Relay ignores channel posts that do not mention the bot, so the channel does not
 
 ## Slack
 
-On **Vercel production**, Slack uses the Events API (same pattern as Telegram). Create the app from [docs/slack-app-manifest.yaml](docs/slack-app-manifest.yaml), then set `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET`. Invite `@Relay` and mention it:
+On **Vercel production**, Relay uses your **user token** (`SLACK_USER_TOKEN`) and searches Slack for `@pocketedge` in any channel you can already read. No bot invite per channel. Replies stay **in the thread only**.
 
 ```
-@Relay analyze SBIN
+@pocketedge analyze SBIN
 ```
 
 Thread replies are follow-ups. Full steps: [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
-
-**Local only:** `SLACK_USER_TOKEN` (`xoxp-…`) + trigger word `pocketedge` (poller). Socket Mode is also local-only.
 
 Slack and Telegram stay fully separate — answers never cross platforms.
 

@@ -1,34 +1,24 @@
 # Slack setup
 
-Relay already handles Slack. Production on Vercel cannot run Socket Mode or the user-token poller (those need a long-lived process). Use the **Events API** webhook, same idea as Telegram.
+Relay answers Slack **as you** with `SLACK_USER_TOKEN`. It **searches** any channel or DM you can already read for `pocketedge` / `@pocketedge`. You do **not** invite a bot to each channel. Replies are **thread-only** (not also posted to the channel).
 
-## Production (Vercel) — this is what you want
+## Production (Vercel)
 
-1. Open [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**.
-2. Paste [docs/slack-app-manifest.yaml](slack-app-manifest.yaml). The request URL is already `https://equity-research-ivory.vercel.app/api/slack/events`.
-3. **Install App** to your workspace.
-4. Copy:
-   - **Bot User OAuth Token** (`xoxb-…`) → `SLACK_BOT_TOKEN`
-   - **Signing Secret** (Basic Information) → `SLACK_SIGNING_SECRET`
-5. Put those on Vercel **Production** (and `.env.local` if you develop locally). Redeploy is not required after env change, but the next Slack event needs the new values — Vercel applies env on the next invocation.
-6. Invite the bot: `/invite @Relay` in each channel you want to use.
-7. Mention it:
+1. Create a Slack app (or reuse yours) and add **User Token Scopes** below, then reinstall so you get an `xoxp-…` token.
+2. Set on Vercel Production: `SLACK_USER_TOKEN`, `SLACK_TRIGGER_WORD=pocketedge`, `CRON_SECRET`.
+3. Optional: `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` if you still want Events API as a backup. Not required for channel pickup.
 
-```
-@Relay analyze SBIN
-```
+Relay scans Slack about every 8 seconds (user-token search) and whenever the dashboard, Telegram, or `/api/slack/poll` runs. A daily cron restarts the scan if it went idle.
 
-Replies **in that same Slack thread** (no `@pocketedge` needed) are follow-up questions on the same Cursor agent. A new top-level message still needs `@pocketedge`.
+Say `@pocketedge …` in any channel you can read. Replies **in that same thread** are follow-ups (no mention needed). A new top-level message still needs `@pocketedge`.
 
 Telegram and Slack stay separate. A Slack question is answered in that Slack thread only.
 
 ### Slack app settings if you created the app by hand
 
-- **Event Subscriptions** → On → Request URL: `https://equity-research-ivory.vercel.app/api/slack/events`
+- **Event Subscriptions** (optional backup) → Request URL: `https://equity-research-ivory.vercel.app/api/slack/events`
 - Subscribe to bot events: `app_mention`, `message.channels`, `message.groups`, `message.im`, `message.mpim`
-- Bot token scopes: `app_mentions:read`, `chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `files:read`, `files:write`, `users:read`, `reactions:write`, `channels:join`
-
-Invite `@Relay` / `@newsagent` to each **channel** you want Events API coverage in (`/invite @Relay`). On Vercel the user-token search poller only runs when Relay is already handling another request (dashboard refresh, Telegram, or a Slack event), so a channel message can sit unseen until then if the bot is not in the channel.
+- Bot token scopes (optional): `app_mentions:read`, `chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `files:read`, `files:write`, `users:read`, `reactions:write`
 
 ---
 
