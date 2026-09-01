@@ -360,7 +360,10 @@ export function Dashboard() {
                   Fast delivery — Cursor status webhook
                 </p>
                 <p className="mt-2 text-xs text-zinc-400">
-                  Add{" "}
+                  When <code className="font-mono text-[11px]">PUBLIC_URL</code> and{" "}
+                  <code className="font-mono text-[11px]">CURSOR_STATUS_WEBHOOK_SECRET</code>{" "}
+                  are set, Relay attaches the status webhook to every Cursor dispatch
+                  automatically. Optional global URL for agents started outside Relay:{" "}
                   {status?.cursorStatusWebhookUrl ? (
                     <code className="font-mono text-[11px] text-amber-200">
                       {status.cursorStatusWebhookUrl}
@@ -369,11 +372,7 @@ export function Dashboard() {
                     <code className="font-mono text-[11px] text-amber-200">
                       {"{PUBLIC_URL}"}/api/cursor/status
                     </code>
-                  )}{" "}
-                  in Cursor → Cloud Agents → Webhooks (event:{" "}
-                  <code className="font-mono text-[11px]">statusChange</code>
-                  ). Use the same secret as{" "}
-                  <code className="font-mono text-[11px]">CURSOR_STATUS_WEBHOOK_SECRET</code>
+                  )}
                   .
                 </p>
                 {status?.cursorStatusWebhookUrl ? (

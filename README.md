@@ -70,13 +70,13 @@ Relay polls the Cursor run as a **fallback**, but for fast delivery you should e
 
 ### Fast delivery: Cursor → Relay status webhook
 
-1. Expose Relay publicly — set `PUBLIC_URL` (e.g. `https://relay.yourdomain.com` or an ngrok URL in dev).
+1. Expose Relay publicly — set `PUBLIC_URL` (e.g. your production host, or `npx localtunnel --port 43147` in dev).
 2. Generate a secret (32+ chars) and set `CURSOR_STATUS_WEBHOOK_SECRET` in `.env.local`.
-3. In [Cursor → Cloud Agents → Webhooks](https://cursor.com/dashboard?tab=webhooks), add:
-   - **URL:** `{PUBLIC_URL}/api/cursor/status`
-   - **Event:** `statusChange`
-   - **Secret:** same value as `CURSOR_STATUS_WEBHOOK_SECRET`
-4. Restart Relay. The dashboard shows whether the status webhook is configured.
+3. Restart Relay.
+
+When both are set, Relay **automatically attaches** `{ url, secret }` to every Cursor automation dispatch — you do **not** need to configure a global webhook in the Cursor dashboard unless you launch agents outside Relay.
+
+Optional: you can also add `{PUBLIC_URL}/api/cursor/status` in Cursor → Cloud Agents → Webhooks for agents started elsewhere.
 
 Relay matches the webhook's agent `id` to the job, fetches conversation + artifacts, and delivers immediately. Polling continues as a backup if the webhook is missed.
 

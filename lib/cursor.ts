@@ -27,6 +27,7 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
 export { AUTOMATION_PROMPT };
 
 export async function buildCursorPayload(job: Job) {
+  const cfg = getConfig();
   const files = [];
   for (const file of job.files ?? []) {
     files.push(await resolveJobFileForCursor(job, file));
@@ -36,7 +37,7 @@ export async function buildCursorPayload(job: Job) {
     ? `${job.prompt}\n\n---\nSlack thread context (same conversation):\n${job.threadContext}`
     : job.prompt;
 
-  return {
+  const payload: Record<string, unknown> = {
     source: job.source,
     job_id: job.id,
     chat_id: job.chatId,
@@ -50,6 +51,15 @@ export async function buildCursorPayload(job: Job) {
     files: files.length ? files : undefined,
     instructions: deliveryInstructions(job, files.length > 0),
   };
+
+  if (cfg.cursorStatusWebhookUrl && cfg.cursorStatusWebhookSecret) {
+    payload.webhook = {
+      url: cfg.cursorStatusWebhookUrl,
+      secret: cfg.cursorStatusWebhookSecret,
+    };
+  }
+
+  return payload;
 }
 
 export async function dispatchToCursor(job: Job) {
