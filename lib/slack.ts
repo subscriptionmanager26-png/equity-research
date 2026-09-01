@@ -155,26 +155,29 @@ export async function sendSlackMessage(input: {
   const chunks = splitSlackText(input.text);
   let lastTs: string | undefined;
   for (const chunk of chunks) {
+    const thread =
+      input.threadTs
+        ? {
+            thread_ts: input.threadTs,
+            reply_broadcast: input.channelId.startsWith("D"),
+          }
+        : {};
     let result = await getSlackClient().chat.postMessage({
       channel: input.channelId,
       text: chunk,
-      thread_ts: input.threadTs,
-      reply_broadcast: Boolean(input.threadTs && input.channelId.startsWith("D")),
       mrkdwn: true,
       metadata: {
         event_type: "relay_delivery",
         event_payload: { app: "relay" },
       },
+      ...thread,
     });
     if (!result.ok && String(result.error ?? "").includes("metadata")) {
       result = await getSlackClient().chat.postMessage({
         channel: input.channelId,
         text: chunk,
-        thread_ts: input.threadTs,
-        reply_broadcast: Boolean(
-          input.threadTs && input.channelId.startsWith("D"),
-        ),
         mrkdwn: true,
+        ...thread,
       });
     }
     if (!result.ok) {
