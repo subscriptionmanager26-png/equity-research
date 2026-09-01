@@ -9,7 +9,6 @@ import {
   type DeliveryFile,
   type FormattedDelivery,
 } from "@/lib/delivery-format";
-import { reportFilenameFor } from "@/lib/report-filename";
 import {
   addJobEvent,
   createJob,
@@ -120,21 +119,15 @@ export async function deliverReply(input: {
   message: string;
   job?: Job;
   files?: DeliveryFile[];
-  reportFilename?: string;
 }): Promise<DeliveryResult> {
   const cfg = getConfig();
   const job =
     input.job ?? (input.jobId ? await getJob(input.jobId) : undefined);
 
-  const reportFilename =
-    input.reportFilename ??
-    (job ? reportFilenameFor(job, input.message, input.files ?? []) : "report.md");
-
   const formatted = formatReplyForJob(
     input.message,
     input.files ?? [],
     job?.prompt,
-    reportFilename,
   );
 
   if (job?.source === "slack" && job.slackChannelId && job.slackThreadTs) {

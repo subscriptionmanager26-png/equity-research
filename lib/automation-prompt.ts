@@ -7,16 +7,15 @@ This repo includes the financial-analysis skill at .cursor/skills/research/finan
 - You MUST follow that skill (US vs India regime, SPELL, filings, earnings call, red flags, retail-forum sweeps).
 - Do not improvise a different report framework.
 
-Delivery:
-1. Write the FULL report only in artifacts/<topic>-report.md (e.g. artifacts/itc-equity-report.md). Do not use a generic artifacts/report.md.
-2. Your final chat message must be a 1–2 sentence summary only (recommendation + key takeaway).
-3. Do NOT create PDF files unless the user explicitly asks for a PDF.
+You decide the delivery format:
+- Short answers (flights, facts, quick lookups): reply directly in your final chat message. No artifact file needed.
+- Long reports (especially financial analysis): write the full report to artifacts/<topic>-report.md (e.g. artifacts/itc-equity-report.md) and give a 1–2 sentence summary in chat.
+- Do NOT create PDF files unless the user explicitly asks for a PDF.
 
-Relay delivers artifacts/*.md to the same Telegram chat or Slack thread.
+Relay forwards your final chat message and any files under artifacts/ unchanged to the same Telegram chat or Slack thread.
 
 Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
-Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
-Relay copies your summary and markdown artifacts to the user automatically.`;
+Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.`;
 
 export function userRequestedPdf(text: string) {
   return /\bpdf\b/i.test(text);

@@ -3,17 +3,16 @@ import {
   agentIsDone,
   extractAgentId,
   getAgent,
-  getAgentDeliveryAnswer,
+  getAgentConversation,
+  getConversationText,
+  getFinalAssistantAnswer,
 } from "@/lib/cursor-api";
 import { userRequestedPdf } from "@/lib/automation-prompt";
 import {
   collectAgentFilesWithRetry,
   mentionedArtifactsMissing,
 } from "@/lib/artifact-collect";
-import {
-  findThreadReportResendFallback,
-} from "@/lib/report-fallback";
-import { reportFilenameFor } from "@/lib/report-filename";
+import { findThreadReportResendFallback } from "@/lib/report-fallback";
 import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
 import { deliverReply, deliveryDetail } from "@/lib/relay";
 
@@ -80,12 +79,17 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
         continue;
       }
 
-      const answer = await getAgentDeliveryAnswer(agentId);
+      const conversation = await getAgentConversation(agentId);
+      const messages = conversation.messages ?? [];
+      const conversationText = getConversationText(messages);
+      const answer = getFinalAssistantAnswer(messages);
       const failed = agentFailed(agent.status);
       const allowPdf = userRequestedPdf(job?.prompt ?? "");
       const collected = failed
         ? []
-        : await collectAgentFilesWithRetry(agentId, answer).catch(() => []);
+        : await collectAgentFilesWithRetry(agentId, conversationText).catch(
+            () => [],
+          );
       const files = allowPdf
         ? collected
         : collected.filter((file) => !/\.pdf$/i.test(file.name));
@@ -98,7 +102,7 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
             ? `Cursor agent ended with ${agent.status}. ${link}`
             : `Cursor finished but did not leave a text answer. ${link}`);
 
-      if (!failed && files.length === 0 && message.length < 500) {
+      if (!failed && files.length === 0) {
         const resend = findThreadReportResendFallback(job, await listJobs());
         if (resend) {
           console.info(
@@ -108,14 +112,10 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
         }
       }
 
-      const missingArtifacts = mentionedArtifactsMissing(answer, files);
+      const missingArtifacts = mentionedArtifactsMissing(conversationText, files);
       if (missingArtifacts.length && !failed && files.length === 0) {
-        message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API. Relay attached the report from the agent text instead._`;
+        message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API, so Relay could not attach ${missingArtifacts.length === 1 ? "it" : "them"}. Open ${link} to view or download the file._`;
       }
-
-      const reportFilename = job
-        ? reportFilenameFor(job, message, files)
-        : "report.md";
 
       const delivery = await deliverReply({
         jobId,
@@ -123,7 +123,6 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
         status: failed ? "error" : "finished",
         message,
         files,
-        reportFilename,
       });
       await addJobEvent(
         jobId,

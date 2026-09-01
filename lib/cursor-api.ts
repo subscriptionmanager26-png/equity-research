@@ -149,50 +149,40 @@ export function mimeFromName(name: string) {
   }
 }
 
-type ConversationMessage = {
+export type ConversationMessage = {
   id?: string;
   type?: string;
   text?: string;
 };
 
+export async function getAgentConversation(agentId: string) {
+  return cursorGet<{ messages?: ConversationMessage[] }>(
+    `/v0/agents/${agentId}/conversation?full=true`,
+  );
+}
+
+export function getConversationText(messages: ConversationMessage[]) {
+  return messages.map((message) => message.text ?? "").join("\n");
+}
+
+/** Final assistant message — Relay passes this through unchanged. */
+export function getFinalAssistantAnswer(messages: ConversationMessage[]) {
+  const assistant = messages
+    .filter((message) => message.type === "assistant_message" && message.text?.trim())
+    .map((message) => cleanAgentAnswer(message.text ?? ""))
+    .filter((text) => text.length > 0);
+  return assistant[assistant.length - 1];
+}
+
 export async function getAgentAnswer(agentId: string): Promise<string | undefined> {
   return getAgentDeliveryAnswer(agentId);
 }
 
-/** Prefer the longest substantive assistant message (report body), not a short closing note. */
 export async function getAgentDeliveryAnswer(
   agentId: string,
 ): Promise<string | undefined> {
-  const data = await cursorGet<{ messages?: ConversationMessage[] }>(
-    `/v0/agents/${agentId}/conversation`,
-  );
-  const assistant = (data.messages ?? [])
-    .filter((message) => message.type === "assistant_message" && message.text?.trim())
-    .map((message) => cleanAgentAnswer(message.text ?? ""))
-    .filter((text) => text.length > 0);
-
-  if (!assistant.length) return undefined;
-
-  const substantive = assistant.filter((text) => !isNavigationMessage(text));
-  const pool = substantive.length ? substantive : assistant;
-  const longest = pool.reduce(
-    (best, text) => (text.length > best.length ? text : best),
-    "",
-  );
-  const last = assistant[assistant.length - 1] ?? "";
-
-  if (longest.length >= REPORT_BODY_MIN_CHARS) return longest;
-  if (longest.length > last.length && longest.length >= 200) return longest;
-  return last || longest || undefined;
-}
-
-const REPORT_BODY_MIN_CHARS = 500;
-
-function isNavigationMessage(text: string) {
-  if (text.length > 320) return false;
-  return /^(?:I'll|I will|Next I'll|Gathering|Creating|Writing|Looking|Checking|Reading|The prior run|memo was updated)/i.test(
-    text.trim(),
-  );
+  const data = await getAgentConversation(agentId);
+  return getFinalAssistantAnswer(data.messages ?? []);
 }
 
 export function cleanAgentAnswer(text: string) {

@@ -66,7 +66,7 @@ Slack and Telegram stay fully separate — answers never cross platforms.
 
 ## How the agent replies
 
-Relay polls the Cursor run and sends the answer back to the **same Telegram chat or Slack thread**. For reports, the agent writes a topic-specific markdown file (e.g. `artifacts/itc-equity-report.md`) and Relay delivers **only that file plus a short summary** in chat — not the full report text. PDFs are omitted unless the user explicitly asks for a PDF. Quick answers under ~500 characters stay as plain text.
+Relay polls the Cursor run and sends the agent's **final chat message** plus any **artifacts** back to the **same Telegram chat or Slack thread** — unchanged. The agent decides whether to answer inline or attach a markdown file under `artifacts/`. PDFs are omitted unless the user explicitly asks for a PDF.
 
 **Slack attachments:** Relay can send files to Slack with your user token (`files:write`). Slack → Cursor file sharing works via inline base64 when `PUBLIC_URL` is unset, or via download URLs when it is set.
 

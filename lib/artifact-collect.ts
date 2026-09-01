@@ -32,7 +32,7 @@ export function normalizeArtifactPath(path: string) {
   return `artifacts/${trimmed.replace(/^\.?\//, "")}`;
 }
 
-/** Pull artifact paths the agent mentioned in its answer. */
+/** Pull artifact paths mentioned anywhere in the agent run text. */
 export function extractMentionedArtifactPaths(text: string) {
   const paths = new Set<string>();
   for (const match of text.matchAll(/`(artifacts\/[^`]+)`/gi)) {
@@ -46,12 +46,12 @@ export function extractMentionedArtifactPaths(text: string) {
 }
 
 export function mentionedArtifactsMissing(
-  answer: string | undefined,
+  conversationText: string | undefined,
   files: CollectedFile[],
 ) {
-  if (!answer?.trim()) return [];
+  if (!conversationText?.trim()) return [];
   const collected = new Set(files.map((f) => f.name.toLowerCase()));
-  return extractMentionedArtifactPaths(answer).filter((path) => {
+  return extractMentionedArtifactPaths(conversationText).filter((path) => {
     const name = path.split("/").pop()?.toLowerCase();
     return name && !collected.has(name);
   });
@@ -59,11 +59,13 @@ export function mentionedArtifactsMissing(
 
 export async function collectAgentFilesWithRetry(
   agentId: string,
-  answer?: string,
-  options?: { attempts?: number; delayMs?: number },
+  conversationText?: string,
+  options?: { attempts?: number; delayMs?: number; initialDelayMs?: number },
 ): Promise<CollectedFile[]> {
-  const attempts = options?.attempts ?? 10;
-  const delayMs = options?.delayMs ?? 3000;
+  const attempts = options?.attempts ?? 15;
+  const delayMs = options?.delayMs ?? 4000;
+  const initialDelayMs = options?.initialDelayMs ?? 8000;
+  const mentionedPaths = extractMentionedArtifactPaths(conversationText ?? "");
   const seen = new Set<string>();
   const files: CollectedFile[] = [];
 
@@ -76,10 +78,14 @@ export async function collectAgentFilesWithRetry(
     files.push(file);
   };
 
+  if (initialDelayMs > 0) {
+    await sleep(initialDelayMs);
+  }
+
   for (let attempt = 0; attempt < attempts; attempt++) {
     await collectListedV1(agentId, add);
     await collectListedV0(agentId, add);
-    await collectMentioned(agentId, answer, add);
+    await collectMentioned(agentId, mentionedPaths, add);
 
     if (files.length > 0) {
       console.info(
@@ -93,7 +99,7 @@ export async function collectAgentFilesWithRetry(
     }
   }
 
-  const missing = mentionedArtifactsMissing(answer, files);
+  const missing = mentionedArtifactsMissing(conversationText, files);
   if (missing.length) {
     console.warn(
       `[relay] Agent mentioned artifacts but none were found for ${agentId}: ${missing.join(", ")}`,
@@ -137,15 +143,25 @@ async function collectListedV0(
 
 async function collectMentioned(
   agentId: string,
-  answer: string | undefined,
+  paths: string[],
   add: (file: CollectedFile) => void,
 ) {
-  for (const path of extractMentionedArtifactPaths(answer ?? "")) {
+  for (const path of paths) {
     try {
       const file = await downloadArtifact(agentId, path);
       add(file);
+      continue;
     } catch {
-      // Expected when the agent claimed a file it did not actually write.
+      // Try v0 absolute path when v1 path fails.
+    }
+    try {
+      const absolutePath = path.startsWith("/opt/cursor/")
+        ? path
+        : `/opt/cursor/${path}`;
+      const file = await downloadArtifactV0(agentId, absolutePath);
+      add(file);
+    } catch {
+      // Expected when Cursor has not published the artifact yet.
     }
   }
 }

@@ -12,4 +12,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 This repository is checked out by Cursor Cloud Agents that answer Telegram and Slack.
 
-For **any financial instrument** (stock, ticker, company, ETF, fund, bond, earnings, filings): follow `.cursor/skills/research/financial-analysis/SKILL.md`. Deliver the full report in `artifacts/<topic>-report.md` (e.g. `artifacts/itc-equity-report.md`) plus a 1–2 sentence chat summary. No PDF unless the user asked for one.
+For **any financial instrument** (stock, ticker, company, ETF, fund, bond, earnings, filings): follow `.cursor/skills/research/financial-analysis/SKILL.md`. For long reports use `artifacts/<topic>-report.md`; for short answers reply in chat. Relay forwards output unchanged. No PDF unless the user asked for one.

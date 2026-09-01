@@ -353,12 +353,12 @@ export function Dashboard() {
                   . Point the Cursor automation at{" "}
                   <strong className="font-medium text-zinc-300">this
                   repository</strong>
-                  , paste the prompt above, and Save. Reports go to topic-specific
-                  files like{" "}
+                  , paste the prompt above, and Save. Relay forwards the agent&apos;s
+                  chat message and any{" "}
                   <code className="font-mono text-[11px] text-sky-200">
-                    artifacts/itc-equity-report.md
+                    artifacts/*.md
                   </code>{" "}
-                  plus a short chat summary — no PDF unless asked.
+                  files unchanged — no PDF unless asked.
                 </p>
               </div>
             </CardContent>
