@@ -9,7 +9,9 @@ Vercel gives you a **stable HTTPS URL** for Cursor status webhooks — no localt
 | Telegram | Long-poll (`getUpdates`) | Webhook → `/api/telegram/webhook` |
 | Cursor status | `/api/cursor/status` | Same (auto `PUBLIC_URL` from `VERCEL_URL`) |
 | Cursor backup poll | In-process waiter | Manual `GET /api/cursor/poll` (Hobby forbids more than one cron per day; status webhook is the live path) |
-| Job store | `.data/store.json` | **Vercel Blob** (`equity-research-blob`, Hobby-free) |
+| Job store | `.data/store.json` | **Upstash Redis** (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) |
+
+## Steps
 | Slack user poller | Local only | Use Slack Events API → `/api/slack/events` |
 
 ## Steps
@@ -23,12 +25,18 @@ vercel link
 
 Import this repo in the [Vercel dashboard](https://vercel.com/new) if you prefer the UI.
 
-### 2. Add Vercel Blob (required for job history)
+### 2. Add Upstash Redis (required for job history)
 
-1. Vercel project → **Storage** → **Create Database** → **Blob**
-2. Name it (e.g. `equity-research-blob`) and connect it to this project — this sets `BLOB_STORE_ID` and `BLOB_READ_WRITE_TOKEN`
+Vercel Blob Hobby is **10k simple operations/month**. Relay rewrites one JSON document on every job update, so Blob burns that quota quickly.
 
-Without Blob, serverless functions have no shared state and job/chat records are lost between Telegram and Cursor webhooks.
+1. Create a **free** Redis database at [console.upstash.com](https://console.upstash.com) (regional, REST enabled).
+2. Copy **UPSTASH_REDIS_REST_URL** and **UPSTASH_REDIS_REST_TOKEN**.
+3. Paste them on the Vercel project → **Settings** → **Environment Variables** → Production.
+4. Redeploy (or wait for the next invocation after this code is live).
+
+Relay then stores jobs under the key `relay:store`. Leave Blob connected if you want, but it is ignored while Upstash is set.
+
+Without Redis (or Blob), serverless functions have no shared state and job/chat records are lost between webhooks.
 
 ### 3. Set environment variables
 

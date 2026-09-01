@@ -25,8 +25,35 @@ function blobEnabled() {
   );
 }
 
+function redisCredentials() {
+  const url = (
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.KV_REST_API_URL ||
+    ""
+  ).trim();
+  const token = (
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.KV_REST_API_TOKEN ||
+    ""
+  ).trim();
+  if (!url || !token) return undefined;
+  return { url, token };
+}
+
 function kvEnabled() {
-  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+  return Boolean(redisCredentials());
+}
+
+let redisClient: import("@upstash/redis").Redis | undefined;
+
+async function getRedis() {
+  const creds = redisCredentials();
+  if (!creds) throw new Error("Upstash Redis is not configured");
+  if (!redisClient) {
+    const { Redis } = await import("@upstash/redis");
+    redisClient = new Redis(creds);
+  }
+  return redisClient;
 }
 
 function withLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -125,25 +152,36 @@ async function writeStoreToBlob(data: StoreData): Promise<void> {
 }
 
 async function readStoreFromKv(): Promise<StoreData> {
-  const { kv } = await import("@vercel/kv");
-  const parsed = await kv.get<StoreData>(KV_KEY);
+  const redis = await getRedis();
+  const parsed = await redis.get<StoreData>(KV_KEY);
   return parsed ? normalizeStore(parsed) : emptyStore();
 }
 
 async function writeStoreToKv(data: StoreData): Promise<void> {
-  const { kv } = await import("@vercel/kv");
-  await kv.set(KV_KEY, data);
+  const redis = await getRedis();
+  await redis.set(KV_KEY, data);
+}
+
+function activeBackend(): "upstash-redis" | "vercel-blob" | "local-file" {
+  const forced = (process.env.RELAY_STORE ?? "").trim().toLowerCase();
+  if (forced === "blob" && blobEnabled()) return "vercel-blob";
+  if (forced === "file") return "local-file";
+  if (kvEnabled()) return "upstash-redis";
+  if (blobEnabled()) return "vercel-blob";
+  return "local-file";
 }
 
 async function readStore(): Promise<StoreData> {
-  if (blobEnabled()) return readStoreFromBlob();
-  if (kvEnabled()) return readStoreFromKv();
+  const backend = activeBackend();
+  if (backend === "upstash-redis") return readStoreFromKv();
+  if (backend === "vercel-blob") return readStoreFromBlob();
   return readStoreFromFile();
 }
 
 async function writeStore(data: StoreData): Promise<void> {
-  if (blobEnabled()) return writeStoreToBlob(data);
-  if (kvEnabled()) return writeStoreToKv(data);
+  const backend = activeBackend();
+  if (backend === "upstash-redis") return writeStoreToKv(data);
+  if (backend === "vercel-blob") return writeStoreToBlob(data);
   return writeStoreToFile(data);
 }
 
@@ -163,7 +201,5 @@ export function getStore(): Promise<StoreData> {
 }
 
 export function storeBackend() {
-  if (blobEnabled()) return "vercel-blob";
-  if (kvEnabled()) return "vercel-kv";
-  return "local-file";
+  return activeBackend();
 }
