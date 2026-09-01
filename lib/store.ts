@@ -25,17 +25,29 @@ function blobEnabled() {
   );
 }
 
+function firstEnv(names: string[]) {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!value?.trim()) continue;
+    if (names.some((name) => key === name || key.endsWith(`_${name}`))) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
 function redisCredentials() {
-  const url = (
-    process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.KV_REST_API_URL ||
-    ""
-  ).trim();
-  const token = (
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    process.env.KV_REST_API_TOKEN ||
-    ""
-  ).trim();
+  const url = firstEnv([
+    "UPSTASH_REDIS_REST_URL",
+    "KV_REST_API_URL",
+  ]);
+  const token = firstEnv([
+    "UPSTASH_REDIS_REST_TOKEN",
+    "KV_REST_API_TOKEN",
+  ]);
   if (!url || !token) return undefined;
   return { url, token };
 }
