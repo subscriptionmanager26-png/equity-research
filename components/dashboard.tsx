@@ -36,6 +36,8 @@ type StatusPayload = {
   slackTriggerWord: string;
   replyConfigured: boolean;
   publicUrlSet: boolean;
+  cursorStatusConfigured?: boolean;
+  cursorStatusWebhookUrl?: string;
   telegramChatIdSet: boolean;
   replyUrl: string;
   slackEventsPath: string;
@@ -252,6 +254,18 @@ export function Dashboard() {
           }
         />
         <StatusCard
+          title="Status webhook"
+          ok={Boolean(status?.cursorStatusConfigured)}
+          warn={Boolean(status?.publicUrlSet && !status?.cursorStatusConfigured)}
+          detail={
+            status?.cursorStatusConfigured
+              ? "Cursor notifies Relay when agents finish — fast delivery."
+              : status?.publicUrlSet
+                ? "Set CURSOR_STATUS_WEBHOOK_SECRET and add the URL in Cursor → Cloud Agents → Webhooks."
+                : "Set PUBLIC_URL + CURSOR_STATUS_WEBHOOK_SECRET for instant delivery (polling is the fallback)."
+          }
+        />
+        <StatusCard
           title="Agent reply"
           ok={Boolean(
             (status?.telegramConfigured && status.chats.length) ||
@@ -341,6 +355,36 @@ export function Dashboard() {
               <pre className="overflow-x-auto rounded-lg bg-black/50 p-3 font-mono text-[11px] leading-5 text-zinc-300">
                 {AUTOMATION_PROMPT}
               </pre>
+              <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-3 text-sm leading-6 text-zinc-300">
+                <p className="font-medium text-amber-100">
+                  Fast delivery — Cursor status webhook
+                </p>
+                <p className="mt-2 text-xs text-zinc-400">
+                  Add{" "}
+                  {status?.cursorStatusWebhookUrl ? (
+                    <code className="font-mono text-[11px] text-amber-200">
+                      {status.cursorStatusWebhookUrl}
+                    </code>
+                  ) : (
+                    <code className="font-mono text-[11px] text-amber-200">
+                      {"{PUBLIC_URL}"}/api/cursor/status
+                    </code>
+                  )}{" "}
+                  in Cursor → Cloud Agents → Webhooks (event:{" "}
+                  <code className="font-mono text-[11px]">statusChange</code>
+                  ). Use the same secret as{" "}
+                  <code className="font-mono text-[11px]">CURSOR_STATUS_WEBHOOK_SECRET</code>
+                  .
+                </p>
+                {status?.cursorStatusWebhookUrl ? (
+                  <div className="mt-2">
+                    <CopyButton
+                      value={status.cursorStatusWebhookUrl}
+                      label="Copy webhook URL"
+                    />
+                  </div>
+                ) : null}
+              </div>
               <div className="rounded-lg border border-sky-400/20 bg-sky-400/5 px-3 py-3 text-sm leading-6 text-zinc-300">
                 <p className="font-medium text-sky-100">
                   Financial-analysis skill (in this repo)

@@ -35,6 +35,7 @@ export function getConfig() {
     replyWebhookSecret,
     publicUrl,
     cursorStatusWebhookSecret,
+    cursorStatusPath: "/api/cursor/status",
     slackBotToken,
     slackUserToken,
     slackAppToken,
@@ -54,6 +55,10 @@ export function getConfig() {
       slackBotToken && slackAppToken && !slackUserToken,
     ),
     replyConfigured: Boolean(replyWebhookSecret),
+    cursorStatusConfigured: Boolean(publicUrl && cursorStatusWebhookSecret),
+    cursorStatusWebhookUrl: publicUrl
+      ? `${publicUrl}/api/cursor/status`
+      : undefined,
   };
 }
 
@@ -75,6 +80,8 @@ export function publicStatus() {
     replyPath: "/api/reply",
     telegramWebhookPath: "/api/telegram/webhook",
     slackEventsPath: "/api/slack/events",
-    cursorStatusPath: "/api/cursor/status",
+    cursorStatusPath: cfg.cursorStatusPath,
+    cursorStatusWebhookUrl: cfg.cursorStatusWebhookUrl,
+    cursorStatusConfigured: cfg.cursorStatusConfigured,
   };
 }

@@ -1,149 +1,91 @@
 import {
-  agentFailed,
   agentIsDone,
   extractAgentId,
   getAgent,
-  getAgentConversation,
-  getConversationText,
-  getFinalAssistantAnswer,
 } from "@/lib/cursor-api";
-import { userRequestedPdf } from "@/lib/automation-prompt";
-import {
-  collectAgentFilesWithRetry,
-  mentionedArtifactsMissing,
-} from "@/lib/artifact-collect";
-import { findThreadReportResendFallback } from "@/lib/report-fallback";
+import { settleAgentJob, isSettling } from "@/lib/cursor-settle";
 import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
-import { deliverReply, deliveryDetail } from "@/lib/relay";
+import { deliverReply } from "@/lib/relay";
 
 declare global {
   var __relayCursorWaiter: { started: boolean } | undefined;
 }
 
 const POLL_MS = 4000;
+const BACKUP_POLL_MS = 12000;
 const TIMEOUT_MS = 12 * 60 * 1000;
 const inFlight = new Set<string>();
 
 export function startCursorWaiter() {
   if (globalThis.__relayCursorWaiter?.started) return;
   globalThis.__relayCursorWaiter = { started: true };
-  console.info("[relay] Cursor waiter started");
+  console.info("[relay] Cursor waiter started (polling fallback)");
   void loop();
 }
 
 async function loop() {
+  const backupPollMs = process.env.PUBLIC_URL ? BACKUP_POLL_MS : POLL_MS;
   while (true) {
     try {
       const jobs = await listJobs();
       for (const job of jobs) {
         if (job.status !== "dispatched") continue;
         const agentId = job.cursorAgentId ?? extractAgentId(job.cursorBody);
-        if (!agentId || inFlight.has(job.id)) continue;
+        if (!agentId || inFlight.has(job.id) || isSettling(job.id)) continue;
         inFlight.add(job.id);
-        void settleJob(job.id, agentId, Date.parse(job.createdAt)).finally(() => {
-          inFlight.delete(job.id);
-        });
+        void waitAndSettle(job.id, agentId, Date.parse(job.createdAt)).finally(
+          () => {
+            inFlight.delete(job.id);
+          },
+        );
       }
     } catch (error) {
       console.error("[relay] Cursor waiter scan failed", error);
     }
-    await sleep(POLL_MS);
+    await sleep(backupPollMs);
   }
 }
 
-async function settleJob(jobId: string, agentId: string, startedAt: number) {
+async function waitAndSettle(jobId: string, agentId: string, startedAt: number) {
   const job = await getJob(jobId);
   while (true) {
     if (Date.now() - startedAt > TIMEOUT_MS) {
-      await addJobEvent(
-        jobId,
-        {
-          type: "cursor_timeout",
-          detail: `Timed out waiting for ${agentId}`,
-        },
-        { status: "error", error: "Cursor agent did not finish in time" },
-      );
-      await deliverReply({
-        jobId,
-        job,
-        status: "error",
-        message: `Cursor started (${agentId}) but did not finish in time. Open https://cursor.com/agents/${agentId}`,
-      }).catch(() => undefined);
+      const current = await getJob(jobId);
+      if (current?.status === "dispatched") {
+        await addJobEvent(
+          jobId,
+          {
+            type: "cursor_timeout",
+            detail: `Timed out waiting for ${agentId}`,
+          },
+          { status: "error", error: "Cursor agent did not finish in time" },
+        );
+        await deliverReply({
+          jobId,
+          job,
+          status: "error",
+          message: `Cursor started (${agentId}) but did not finish in time. Open https://cursor.com/agents/${agentId}`,
+        }).catch(() => undefined);
+      }
       return;
     }
 
     try {
+      const current = await getJob(jobId);
+      if (current?.status !== "dispatched") {
+        return;
+      }
+
       const agent = await getAgent(agentId);
       if (!agentIsDone(agent.status)) {
         await sleep(POLL_MS);
         continue;
       }
 
-      const conversation = await getAgentConversation(agentId);
-      const messages = conversation.messages ?? [];
-      const conversationText = getConversationText(messages);
-      const answer = getFinalAssistantAnswer(messages);
-      const failed = agentFailed(agent.status);
-      const allowPdf = userRequestedPdf(job?.prompt ?? "");
-      const collected = failed
-        ? []
-        : await collectAgentFilesWithRetry(agentId, conversationText).catch(
-            () => [],
-          );
-      const files = allowPdf
-        ? collected
-        : collected.filter((file) => !/\.pdf$/i.test(file.name));
-      const link = agent.url ?? agent.target?.url ?? `https://cursor.com/agents/${agentId}`;
-      let message =
-        answer ||
-        (files.length
-          ? `Cursor attached ${files.length} file${files.length === 1 ? "" : "s"}.`
-          : failed
-            ? `Cursor agent ended with ${agent.status}. ${link}`
-            : `Cursor finished but did not leave a text answer. ${link}`);
-
-      if (!failed && files.length === 0) {
-        const resend = findThreadReportResendFallback(job, await listJobs());
-        if (resend) {
-          console.info(
-            `[relay] Resending prior thread report for ${jobId} (${resend.length} chars)`,
-          );
-          message = resend;
-        }
-      }
-
-      const missingArtifacts = mentionedArtifactsMissing(conversationText, files);
-      if (missingArtifacts.length && !failed && files.length === 0) {
-        message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API, so Relay could not attach ${missingArtifacts.length === 1 ? "it" : "them"}. Open ${link} to view or download the file._`;
-      }
-
-      const delivery = await deliverReply({
-        jobId,
-        job,
-        status: failed ? "error" : "finished",
-        message,
-        files,
+      await settleAgentJob(jobId, agentId, {
+        trigger: "poll",
+        initialArtifactDelayMs: 4000,
       });
-      await addJobEvent(
-        jobId,
-        {
-          type: "replied",
-          detail: deliveryDetail(job, delivery),
-        },
-        {
-          status: failed ? "error" : "replied",
-          error: failed ? message : undefined,
-          cursorAgentId: agentId,
-          reply: {
-            message,
-            status: agent.status ?? "finished",
-            receivedAt: new Date().toISOString(),
-            telegramMessageId: delivery.telegramMessageId,
-            slackMessageTs: delivery.slackMessageTs,
-            files: delivery.files,
-          },
-        },
-      );
       return;
     } catch (error) {
       console.error(`[relay] Cursor wait failed for ${agentId}`, error);

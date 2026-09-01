@@ -66,7 +66,19 @@ Slack and Telegram stay fully separate — answers never cross platforms.
 
 ## How the agent replies
 
-Relay polls the Cursor run and sends the agent's **final chat message** plus any **artifacts** back to the **same Telegram chat or Slack thread** — unchanged. The agent decides whether to answer inline or attach a markdown file under `artifacts/`. PDFs are omitted unless the user explicitly asks for a PDF.
+Relay polls the Cursor run as a **fallback**, but for fast delivery you should enable the **Cursor status webhook** (see below). When configured, Cursor POSTs to Relay as soon as the agent finishes; Relay then forwards the agent's **final chat message** plus any **artifacts** unchanged.
+
+### Fast delivery: Cursor → Relay status webhook
+
+1. Expose Relay publicly — set `PUBLIC_URL` (e.g. `https://relay.yourdomain.com` or an ngrok URL in dev).
+2. Generate a secret (32+ chars) and set `CURSOR_STATUS_WEBHOOK_SECRET` in `.env.local`.
+3. In [Cursor → Cloud Agents → Webhooks](https://cursor.com/dashboard?tab=webhooks), add:
+   - **URL:** `{PUBLIC_URL}/api/cursor/status`
+   - **Event:** `statusChange`
+   - **Secret:** same value as `CURSOR_STATUS_WEBHOOK_SECRET`
+4. Restart Relay. The dashboard shows whether the status webhook is configured.
+
+Relay matches the webhook's agent `id` to the job, fetches conversation + artifacts, and delivers immediately. Polling continues as a backup if the webhook is missed.
 
 **Slack attachments:** Relay can send files to Slack with your user token (`files:write`). Slack → Cursor file sharing works via inline base64 when `PUBLIC_URL` is unset, or via download URLs when it is set.
 
@@ -82,7 +94,7 @@ The **financial-analysis** skill lives at `.cursor/skills/research/financial-ana
 
 Optional: save the environment and run one build so `npm install` is pre-baked.
 
-Optional: point Cursor cloud-agent **statusChange** webhooks at `/api/cursor/status`. If `CURSOR_STATUS_WEBHOOK_SECRET` is set, Relay verifies `X-Webhook-Signature`.
+Optional: point Cursor cloud-agent **statusChange** webhooks at `{PUBLIC_URL}/api/cursor/status` — **recommended for fast delivery**. Set `PUBLIC_URL` and `CURSOR_STATUS_WEBHOOK_SECRET`; Relay verifies `X-Webhook-Signature`.
 
 ## Environment
 
