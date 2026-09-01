@@ -97,6 +97,8 @@ function formatTime(iso: string) {
 
 function statusBadge(status: Job["status"]) {
   if (status === "replied") return { label: "Replied", variant: "default" as const };
+  if (status === "delivering")
+    return { label: "Sending", variant: "secondary" as const };
   if (status === "dispatched")
     return { label: "Waiting", variant: "secondary" as const };
   if (status === "error")

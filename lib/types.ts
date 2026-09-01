@@ -1,8 +1,15 @@
 export type JobStatus =
   | "queued"
   | "dispatched"
+  | "delivering"
   | "replied"
   | "error";
+
+export type PendingArtifacts = {
+  agentId: string;
+  mentionedPaths: string[];
+  attempts: number;
+};
 
 export type JobSource = "telegram" | "dashboard" | "slack";
 
@@ -49,6 +56,7 @@ export type Job = {
   cursorHttpStatus?: number;
   cursorBody?: unknown;
   cursorAgentId?: string;
+  pendingArtifacts?: PendingArtifacts;
   reply?: JobReply;
   error?: string;
   events: JobEvent[];

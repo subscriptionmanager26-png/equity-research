@@ -70,8 +70,10 @@ Relay **automatically** attaches `webhook: { url, secret }` to every Cursor auto
 
 If the agent writes `artifacts/foo-report.md` but Telegram only gets text, Cursor’s artifacts API may not have published the file yet. Relay:
 
-1. Sends the chat answer immediately
-2. Retries artifact download in the background (~40s)
-3. Sends the file as a **second message** if it appears
+1. **Waits for the chat answer on the status webhook** (does not return 200 until Telegram/Slack has the text — this is what removes the long delay)
+2. Retries artifact download after the response (`after()`) and again via `/api/cursor/poll` cron, using stored `pendingArtifacts`
+3. Sends the file as a **second message** when Cursor publishes it
 
 If the file never appears in Cursor’s API, open the agent run on cursor.com — that’s a Cursor platform limitation, not Relay dropping the file.
+
+The existing Vercel project must build from this repo’s `app/` directory. A deploy with no `app/` or `pages/` folder will fail with `missing_pages_app`.

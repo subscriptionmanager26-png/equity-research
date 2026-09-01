@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { pollDispatchedJobs } from "@/lib/cursor-poll";
 import { timingSafeEqual } from "@/lib/relay";
 
+export const maxDuration = 60;
+
 function authorized(request: Request) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return true;

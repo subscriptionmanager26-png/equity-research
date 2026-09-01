@@ -23,12 +23,26 @@ async function cursorGet<T>(path: string): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+export function normalizeCursorAgentId(id: string) {
+  const trimmed = id.trim();
+  if (trimmed.startsWith("bc_")) return `bc-${trimmed.slice(3)}`;
+  return trimmed;
+}
+
 export function extractAgentId(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined;
   const record = body as Record<string, unknown>;
   for (const key of ["backgroundComposerId", "id", "agentId", "bcId"]) {
     const value = record[key];
-    if (typeof value === "string" && value.startsWith("bc-")) return value;
+    if (typeof value === "string") {
+      const id = value.trim();
+      if (id.startsWith("bc-") || id.startsWith("bc_")) {
+        return normalizeCursorAgentId(id);
+      }
+    }
+  }
+  if (record.data && typeof record.data === "object") {
+    return extractAgentId(record.data);
   }
   return undefined;
 }
@@ -55,11 +69,30 @@ export type CursorArtifactV0 = {
   sizeBytes?: number;
 };
 
+export function parseArtifactList(data: unknown): CursorArtifact[] {
+  if (!data || typeof data !== "object") return [];
+  const record = data as Record<string, unknown>;
+  const raw = record.items ?? record.artifacts;
+  if (!Array.isArray(raw)) return [];
+  const items: CursorArtifact[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item as Record<string, unknown>;
+    const path = [entry.path, entry.relativePath, entry.name, entry.absolutePath].find(
+      (value): value is string => typeof value === "string" && value.trim().length > 0,
+    );
+    if (!path) continue;
+    items.push({
+      path,
+      sizeBytes: typeof entry.sizeBytes === "number" ? entry.sizeBytes : undefined,
+    });
+  }
+  return items;
+}
+
 export async function listArtifacts(agentId: string): Promise<CursorArtifact[]> {
-  const data = await cursorGet<{ items?: CursorArtifact[] }>(
-    `/v1/agents/${agentId}/artifacts`,
-  );
-  return (data.items ?? []).filter((item) => item.path);
+  const data = await cursorGet<unknown>(`/v1/agents/${agentId}/artifacts`);
+  return parseArtifactList(data);
 }
 
 export async function listArtifactsV0(agentId: string): Promise<CursorArtifactV0[]> {

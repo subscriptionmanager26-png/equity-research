@@ -97,8 +97,49 @@ export async function addJobEvent(
       type: event.type,
       detail: event.detail,
     });
-    if (patch) Object.assign(job, patch, { updatedAt: job.updatedAt });
+    if (patch) {
+      Object.assign(job, patch, { updatedAt: job.updatedAt });
+      if ("pendingArtifacts" in patch && patch.pendingArtifacts === undefined) {
+        delete job.pendingArtifacts;
+      }
+    }
     return job;
+  });
+}
+
+/** Atomically claim a dispatched job so two webhook/poll workers cannot both deliver. */
+export async function claimJobForSettle(jobId: string): Promise<Job | undefined> {
+  return updateStore((data) => {
+    const job = data.jobs.find((item) => item.id === jobId);
+    if (!job || job.status !== "dispatched") return undefined;
+    job.status = "delivering";
+    job.updatedAt = new Date().toISOString();
+    job.events.unshift({
+      at: job.updatedAt,
+      type: "delivering",
+      detail: "Collecting Cursor answer and artifacts",
+    });
+    return job;
+  });
+}
+
+export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
+  const now = Date.now();
+  return updateStore((data) => {
+    let reclaimed = 0;
+    for (const job of data.jobs) {
+      if (job.status !== "delivering") continue;
+      if (now - Date.parse(job.updatedAt) < maxAgeMs) continue;
+      job.status = "dispatched";
+      job.updatedAt = new Date().toISOString();
+      job.events.unshift({
+        at: job.updatedAt,
+        type: "reclaimed",
+        detail: "Delivery worker timed out; polling will retry",
+      });
+      reclaimed += 1;
+    }
+    return reclaimed;
   });
 }
 

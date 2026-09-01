@@ -2,14 +2,18 @@ import crypto from "node:crypto";
 
 import { NextResponse } from "next/server";
 
+import { continueAfterResponse } from "@/lib/after-response";
 import { getConfig } from "@/lib/config";
 import {
   findDispatchedJobForAgent,
   markWebhookSeen,
+  runArtifactFollowUp,
   settleAgentJob,
 } from "@/lib/cursor-settle";
 import { listJobs } from "@/lib/jobs";
 import { timingSafeEqual } from "@/lib/relay";
+
+export const maxDuration = 60;
 
 function verifySignature(secret: string, rawBody: string, signature: string) {
   const expected =
@@ -93,19 +97,23 @@ export async function POST(request: Request) {
     `[relay] Status webhook ${webhookEvent} ${status} for ${agentId} → ${job.id}`,
   );
 
-  void settleAgentJob(job.id, agentId, { trigger: "webhook" }).then((result) => {
-    if (
-      !result.ok &&
-      result.reason !== "already_replied" &&
-      result.reason !== "already_settling"
-    ) {
-      console.warn(`[relay] Webhook settle failed for ${job.id}`, result);
-    }
-  });
+  const result = await settleAgentJob(job.id, agentId, { trigger: "webhook" });
+  if (
+    !result.ok &&
+    result.reason !== "already_replied" &&
+    result.reason !== "already_settling"
+  ) {
+    console.warn(`[relay] Webhook settle failed for ${job.id}`, result);
+  }
+
+  if (result.followUp) {
+    continueAfterResponse(() => runArtifactFollowUp(result.followUp!));
+  }
 
   return NextResponse.json({
     ok: true,
     matched: true,
+    settled: result.ok,
     jobId: job.id,
     agentId,
     status,

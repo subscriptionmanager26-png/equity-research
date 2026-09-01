@@ -4,6 +4,7 @@ import {
   getAgent,
   getAgentConversation,
   getFinalAssistantAnswer,
+  normalizeCursorAgentId,
 } from "@/lib/cursor-api";
 import { userRequestedPdf } from "@/lib/automation-prompt";
 import { followUpArtifacts } from "@/lib/artifact-followup";
@@ -13,7 +14,12 @@ import {
   mentionedArtifactsMissing,
 } from "@/lib/artifact-collect";
 import { findThreadReportResendFallback } from "@/lib/report-fallback";
-import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
+import {
+  addJobEvent,
+  claimJobForSettle,
+  getJob,
+  listJobs,
+} from "@/lib/jobs";
 import { deliverReply, deliveryDetail } from "@/lib/relay";
 import type { Job } from "@/lib/types";
 
@@ -21,11 +27,19 @@ const settling = new Set<string>();
 const seenWebhookIds = new Set<string>();
 const MAX_WEBHOOK_IDS = 500;
 
+export type SettleResult = {
+  ok: boolean;
+  reason?: string;
+  followUp?: {
+    jobId: string;
+    agentId: string;
+    assistantText: string;
+    job: Job;
+  };
+};
+
 export function normalizeAgentId(id: string) {
-  const trimmed = id.trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("bc_")) return `bc-${trimmed.slice(3)}`;
-  return trimmed;
+  return normalizeCursorAgentId(id);
 }
 
 export function agentIdForJob(job: Job) {
@@ -69,9 +83,9 @@ function artifactCollectionOptions(options: SettleOptions) {
   const trigger = options.trigger ?? "poll";
   if (trigger === "webhook") {
     return {
-      initialDelayMs: options.initialArtifactDelayMs ?? 500,
-      attempts: options.artifactAttempts ?? 4,
-      delayMs: options.artifactDelayMs ?? 1500,
+      initialDelayMs: options.initialArtifactDelayMs ?? 400,
+      attempts: options.artifactAttempts ?? 3,
+      delayMs: options.artifactDelayMs ?? 900,
     };
   }
   return {
@@ -99,19 +113,22 @@ export async function settleAgentJob(
   jobId: string,
   agentId: string,
   options: SettleOptions = {},
-): Promise<{ ok: boolean; reason?: string }> {
+): Promise<SettleResult> {
   if (settling.has(jobId)) {
     return { ok: false, reason: "already_settling" };
   }
 
-  const job = await getJob(jobId);
-  if (!job) return { ok: false, reason: "job_not_found" };
-  if (job.status !== "dispatched") {
-    return { ok: false, reason: "already_replied" };
-  }
-
   settling.add(jobId);
   try {
+    const claimed = await claimJobForSettle(jobId);
+    if (!claimed) {
+      const current = await getJob(jobId);
+      return {
+        ok: false,
+        reason: current?.status === "replied" ? "already_replied" : "already_settling",
+      };
+    }
+
     const trigger = options.trigger ?? "poll";
     const artifactOptions = artifactCollectionOptions(options);
 
@@ -121,7 +138,7 @@ export async function settleAgentJob(
     const assistantText = assistantConversationText(messages);
     const answer = getFinalAssistantAnswer(messages);
     const failed = agentFailed(agent.status);
-    const allowPdf = userRequestedPdf(job.prompt ?? "");
+    const allowPdf = userRequestedPdf(claimed.prompt ?? "");
     const collected = failed
       ? []
       : await collectAgentFilesWithRetry(agentId, assistantText, artifactOptions).catch(
@@ -141,7 +158,7 @@ export async function settleAgentJob(
           : `Cursor finished but did not leave a text answer. ${link}`);
 
     if (!failed && files.length === 0) {
-      const resend = findThreadReportResendFallback(job, await listJobs());
+      const resend = findThreadReportResendFallback(claimed, await listJobs());
       if (resend) {
         console.info(
           `[relay] Resending prior thread report for ${jobId} (${resend.length} chars)`,
@@ -157,11 +174,14 @@ export async function settleAgentJob(
 
     const delivery = await deliverReply({
       jobId,
-      job,
+      job: claimed,
       status: failed ? "error" : "finished",
       message,
       files,
     });
+
+    const needsFollowUp = !failed && delivery.files.length === 0;
+    const mentionedPaths = extractMentionedArtifactPaths(assistantText);
 
     await addJobEvent(
       jobId,
@@ -170,12 +190,15 @@ export async function settleAgentJob(
         detail:
           trigger === "webhook"
             ? `Cursor status webhook delivered ${agentId}`
-            : deliveryDetail(job, delivery),
+            : deliveryDetail(claimed, delivery),
       },
       {
         status: failed ? "error" : "replied",
         error: failed ? message : undefined,
         cursorAgentId: agentId,
+        pendingArtifacts: needsFollowUp
+          ? { agentId, mentionedPaths, attempts: 0 }
+          : undefined,
         reply: {
           message,
           status: agent.status ?? "finished",
@@ -191,17 +214,42 @@ export async function settleAgentJob(
       `[relay] Settled ${jobId} via ${trigger} (${agentId}) — ${delivery.files.length} file(s)`,
     );
 
-    if (!failed && delivery.files.length === 0 && extractMentionedArtifactPaths(assistantText).length) {
-      void followUpArtifacts(jobId, agentId, assistantText, job).catch((error) => {
-        console.error(`[relay] Artifact follow-up failed for ${jobId}`, error);
-      });
+    if (needsFollowUp) {
+      return {
+        ok: true,
+        followUp: { jobId, agentId, assistantText, job: claimed },
+      };
     }
 
     return { ok: true };
   } catch (error) {
     console.error(`[relay] settleAgentJob failed for ${jobId}`, error);
+    await addJobEvent(
+      jobId,
+      {
+        type: "settle_error",
+        detail: error instanceof Error ? error.message : "settle failed",
+      },
+      { status: "dispatched" },
+    ).catch(() => undefined);
     return { ok: false, reason: "error" };
   } finally {
     settling.delete(jobId);
   }
+}
+
+export async function runArtifactFollowUp(followUp: {
+  jobId: string;
+  agentId: string;
+  assistantText: string;
+  job?: Job;
+}) {
+  const job = followUp.job ?? (await getJob(followUp.jobId));
+  if (!job) return;
+  await followUpArtifacts(
+    followUp.jobId,
+    followUp.agentId,
+    followUp.assistantText,
+    job,
+  );
 }

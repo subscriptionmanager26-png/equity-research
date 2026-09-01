@@ -3,8 +3,8 @@ import {
   extractAgentId,
   getAgent,
 } from "@/lib/cursor-api";
-import { settleAgentJob, isSettling } from "@/lib/cursor-settle";
-import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
+import { settleAgentJob, isSettling, runArtifactFollowUp } from "@/lib/cursor-settle";
+import { addJobEvent, getJob, listJobs, reclaimStaleDeliveringJobs } from "@/lib/jobs";
 import { deliverReply } from "@/lib/relay";
 
 declare global {
@@ -32,6 +32,7 @@ export function startCursorWaiter() {
 async function loop() {
   while (true) {
     try {
+      await reclaimStaleDeliveringJobs();
       const jobs = await listJobs();
       for (const job of jobs) {
         if (job.status !== "dispatched") continue;
@@ -88,7 +89,9 @@ async function waitAndSettle(jobId: string, agentId: string, startedAt: number) 
         continue;
       }
 
-      await settleAgentJob(jobId, agentId, { trigger: "poll" });
+      await settleAgentJob(jobId, agentId, { trigger: "poll" }).then((result) => {
+        if (result.followUp) return runArtifactFollowUp(result.followUp);
+      });
       return;
     } catch (error) {
       console.error(`[relay] Cursor wait failed for ${agentId}`, error);
