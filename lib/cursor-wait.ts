@@ -8,23 +8,28 @@ import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
 import { deliverReply } from "@/lib/relay";
 
 declare global {
-  var __relayCursorWaiter: { started: boolean } | undefined;
+  var __relayCursorWaiter: { started: boolean; loopActive?: boolean } | undefined;
 }
 
 const POLL_MS = 4000;
-const BACKUP_POLL_MS = 12000;
 const TIMEOUT_MS = 12 * 60 * 1000;
 const inFlight = new Set<string>();
 
 export function startCursorWaiter() {
-  if (globalThis.__relayCursorWaiter?.started) return;
-  globalThis.__relayCursorWaiter = { started: true };
+  const state = globalThis.__relayCursorWaiter;
+  if (state?.loopActive) {
+    return;
+  }
+  globalThis.__relayCursorWaiter = { started: true, loopActive: true };
   console.info("[relay] Cursor waiter started (polling fallback)");
-  void loop();
+  void loop().finally(() => {
+    if (globalThis.__relayCursorWaiter) {
+      globalThis.__relayCursorWaiter.loopActive = false;
+    }
+  });
 }
 
 async function loop() {
-  const backupPollMs = process.env.PUBLIC_URL ? BACKUP_POLL_MS : POLL_MS;
   while (true) {
     try {
       const jobs = await listJobs();
@@ -33,6 +38,7 @@ async function loop() {
         const agentId = job.cursorAgentId ?? extractAgentId(job.cursorBody);
         if (!agentId || inFlight.has(job.id) || isSettling(job.id)) continue;
         inFlight.add(job.id);
+        console.info(`[relay] Polling fallback picked up ${job.id} (${agentId})`);
         void waitAndSettle(job.id, agentId, Date.parse(job.createdAt)).finally(
           () => {
             inFlight.delete(job.id);
@@ -42,7 +48,7 @@ async function loop() {
     } catch (error) {
       console.error("[relay] Cursor waiter scan failed", error);
     }
-    await sleep(backupPollMs);
+    await sleep(POLL_MS);
   }
 }
 
@@ -82,10 +88,7 @@ async function waitAndSettle(jobId: string, agentId: string, startedAt: number) 
         continue;
       }
 
-      await settleAgentJob(jobId, agentId, {
-        trigger: "poll",
-        initialArtifactDelayMs: 4000,
-      });
+      await settleAgentJob(jobId, agentId, { trigger: "poll" });
       return;
     } catch (error) {
       console.error(`[relay] Cursor wait failed for ${agentId}`, error);

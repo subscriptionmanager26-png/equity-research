@@ -60,7 +60,35 @@ export function isSettling(jobId: string) {
 export type SettleOptions = {
   trigger?: "poll" | "webhook";
   initialArtifactDelayMs?: number;
+  artifactAttempts?: number;
+  artifactDelayMs?: number;
 };
+
+function artifactCollectionOptions(options: SettleOptions) {
+  const trigger = options.trigger ?? "poll";
+  if (trigger === "webhook") {
+    return {
+      initialDelayMs: options.initialArtifactDelayMs ?? 500,
+      attempts: options.artifactAttempts ?? 4,
+      delayMs: options.artifactDelayMs ?? 1500,
+    };
+  }
+  return {
+    initialDelayMs: options.initialArtifactDelayMs ?? 1000,
+    attempts: options.artifactAttempts ?? 5,
+    delayMs: options.artifactDelayMs ?? 2000,
+  };
+}
+
+/** Assistant messages only — avoids boilerplate paths from the automation prompt. */
+export function assistantConversationText(
+  messages: { type?: string; text?: string }[],
+) {
+  return messages
+    .filter((message) => message.type === "assistant_message")
+    .map((message) => message.text ?? "")
+    .join("\n");
+}
 
 /**
  * Fetch the agent answer + artifacts and deliver to Telegram/Slack.
@@ -84,24 +112,21 @@ export async function settleAgentJob(
   settling.add(jobId);
   try {
     const trigger = options.trigger ?? "poll";
-    const initialArtifactDelayMs =
-      options.initialArtifactDelayMs ??
-      (trigger === "webhook" ? 1500 : 4000);
+    const artifactOptions = artifactCollectionOptions(options);
 
     const agent = await getAgent(agentId);
     const conversation = await getAgentConversation(agentId);
     const messages = conversation.messages ?? [];
     const conversationText = getConversationText(messages);
+    const assistantText = assistantConversationText(messages);
     const answer = getFinalAssistantAnswer(messages);
     const failed = agentFailed(agent.status);
     const allowPdf = userRequestedPdf(job.prompt ?? "");
     const collected = failed
       ? []
-      : await collectAgentFilesWithRetry(agentId, conversationText, {
-          initialDelayMs: initialArtifactDelayMs,
-          attempts: trigger === "webhook" ? 12 : 15,
-          delayMs: trigger === "webhook" ? 2500 : 4000,
-        }).catch(() => []);
+      : await collectAgentFilesWithRetry(agentId, assistantText, artifactOptions).catch(
+          () => [],
+        );
     const files = allowPdf
       ? collected
       : collected.filter((file) => !/\.pdf$/i.test(file.name));

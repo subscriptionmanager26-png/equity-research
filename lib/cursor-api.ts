@@ -14,6 +14,7 @@ async function cursorGet<T>(path: string): Promise<T> {
   const response = await fetch(`${API}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
   const text = await response.text();
   if (!response.ok) {

@@ -93,10 +93,7 @@ export async function POST(request: Request) {
     `[relay] Status webhook ${webhookEvent} ${status} for ${agentId} → ${job.id}`,
   );
 
-  void settleAgentJob(job.id, agentId, {
-    trigger: "webhook",
-    initialArtifactDelayMs: 1500,
-  }).then((result) => {
+  void settleAgentJob(job.id, agentId, { trigger: "webhook" }).then((result) => {
     if (
       !result.ok &&
       result.reason !== "already_replied" &&
