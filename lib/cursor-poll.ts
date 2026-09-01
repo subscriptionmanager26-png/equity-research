@@ -9,7 +9,7 @@ import { getAgent, agentIsDone } from "@/lib/cursor-api";
 
 /** Settle any dispatched jobs whose Cursor agent has finished (cron / manual backup). */
 export async function pollDispatchedJobs() {
-  const reclaimed = await reclaimStaleDeliveringJobs();
+  const reclaimed = await reclaimStaleDeliveringJobs(15_000);
   const jobs = await listJobs();
   let settled = 0;
   let artifactFollowUps = 0;

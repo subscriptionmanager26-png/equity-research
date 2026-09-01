@@ -1,13 +1,14 @@
 import { getConfig } from "@/lib/config";
-import { handleSlackEvent } from "@/lib/handle-slack";
+import { handleSlackEvent, isRelaySlackOutbound, isSlackThreadReply } from "@/lib/handle-slack";
 import {
   getSlackPollCursor,
   getSlackSearchCursor,
+  getSlackThread,
   listSlackThreads,
-  markSlackMessageProcessed,
   setSlackPollCursor,
   setSlackSearchCursor,
 } from "@/lib/jobs";
+import { getStore, updateStore } from "@/lib/store";
 import {
   getSlackBotIdentity,
   getSlackClient,
@@ -22,6 +23,7 @@ declare global {
 }
 
 const POLL_MS = 3000;
+const MIN_POLL_GAP_MS = 12_000;
 
 export async function startSlackUserPoller() {
   if (globalThis.__relaySlackUserPoller?.started) return;
@@ -37,9 +39,30 @@ export async function startSlackUserPoller() {
   if (!actor) return;
 
   console.info(
-    `[relay] Slack user mode: watching for "${cfg.slackTriggerWord}" as ${actor.name ?? actor.userId} (no bot channel invites)`,
+    `[relay] Slack user mode: watching for "${cfg.slackTriggerWord}" as ${actor.name ?? actor.userId} (replies as you)`,
   );
   void loop(actor.userId);
+}
+
+/** One search + thread pass. Used on Vercel where a long poller cannot stay alive. */
+export async function pollSlackOnce(options?: { force?: boolean }) {
+  const cfg = getConfig();
+  if (!cfg.slackUserPollConfigured) return { ok: false, reason: "no_user_token" };
+  if (!options?.force) {
+    const last = Date.parse((await getStore()).slackLastPollAt ?? "") || 0;
+    if (Date.now() - last < MIN_POLL_GAP_MS) {
+      return { ok: true, skipped: true, reason: "throttled" };
+    }
+    await updateStore((data) => {
+      data.slackLastPollAt = new Date().toISOString();
+    });
+  }
+  const actor = await getSlackBotIdentity();
+  await runPollStep("search", () => pollSearchTriggers(actor.userId));
+  await runPollStep("dms", () => pollDirectMessages(actor.userId));
+  await runPollStep("threads", () => pollTrackedThreads(actor.userId));
+  await runPollStep("channels", () => pollConfiguredChannels(actor.userId));
+  return { ok: true, actor: actor.name ?? actor.userId };
 }
 
 async function loop(actorUserId: string) {
@@ -170,7 +193,6 @@ async function pollTrackedThreads(actorUserId: string) {
         if (!message.ts || !message.user) continue;
         if (Number(message.ts) <= Number(cursor)) continue;
         if (message.ts === thread.threadTs) continue;
-        if (messageTriggersRelay(message.text ?? "")) continue;
 
         newestTs = message.ts;
         await processMessage(
@@ -182,6 +204,10 @@ async function pollTrackedThreads(actorUserId: string) {
             thread_ts: message.thread_ts ?? thread.threadTs,
             channel: thread.channelId,
             bot_id: message.bot_id,
+            metadata:
+              message.metadata && typeof message.metadata.event_type === "string"
+                ? { event_type: message.metadata.event_type }
+                : undefined,
             subtype:
               "subtype" in message && typeof message.subtype === "string"
                 ? message.subtype
@@ -278,15 +304,20 @@ async function pollChannel(channelId: string, actorUserId: string) {
 }
 
 async function processMessage(event: SlackInboundEvent, actorUserId: string) {
-  const key = `${event.channel}:${event.ts}`;
-  if (!(await markSlackMessageProcessed(key))) return;
-  const ownMessage = event.user === actorUserId;
-  if (ownMessage && !messageTriggersRelay(event.text ?? "")) return;
-  if (!ownMessage && isSlackBotMessage(event, actorUserId)) return;
+  if (isRelaySlackOutbound(event)) return;
   if (shouldIgnoreSlackSubtype(event.subtype)) return;
 
+  const ownMessage = event.user === actorUserId;
+  if (ownMessage && !messageTriggersRelay(event.text ?? "")) {
+    const threadTs = isSlackThreadReply(event) ? event.thread_ts : undefined;
+    if (!threadTs) return;
+    const tracked = await getSlackThread(event.channel, threadTs);
+    if (!tracked) return;
+  }
+  if (!ownMessage && isSlackBotMessage(event, actorUserId)) return;
+
   console.info(
-    `[relay] Slack trigger in ${event.channel} (${event.type}): ${(event.text ?? "").slice(0, 80)}`,
+    `[relay] Slack ${isSlackThreadReply(event) ? "thread reply" : "trigger"} in ${event.channel}: ${(event.text ?? "").slice(0, 80)}`,
   );
 
   await handleSlackEvent(event).catch((error) => {

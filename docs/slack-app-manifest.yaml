@@ -1,0 +1,47 @@
+display_information:
+  name: Relay
+  description: Send equity-research questions to a Cursor cloud agent and get the answer in-thread.
+  background_color: "#0f172a"
+features:
+  bot_user:
+    display_name: Relay
+    always_online: true
+oauth_config:
+  scopes:
+    user:
+      - search:read
+      - channels:history
+      - groups:history
+      - im:history
+      - im:read
+      - mpim:history
+      - channels:read
+      - groups:read
+      - chat:write
+      - files:write
+      - users:read
+      - reactions:write
+    bot:
+      - app_mentions:read
+      - chat:write
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - files:read
+      - files:write
+      - users:read
+      - reactions:write
+      - channels:join
+settings:
+  event_subscriptions:
+    request_url: https://equity-research-ivory.vercel.app/api/slack/events
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { continueAfterResponse } from "@/lib/after-response";
 import { getConfig } from "@/lib/config";
+import { watchDispatchedJob } from "@/lib/cursor-wait";
 import { handleSlackEvent } from "@/lib/handle-slack";
-import { markSlackEventProcessed } from "@/lib/jobs";
+import { getJob, markSlackEventProcessed } from "@/lib/jobs";
 import { verifySlackSignature } from "@/lib/slack";
+import { pollSlackOnce } from "@/lib/slack-user-poller";
 import type { SlackInboundEvent } from "@/lib/types";
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const cfg = getConfig();
@@ -47,10 +52,27 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, duplicate: true });
       }
     }
-    void handleSlackEvent(payload.event).catch((error) => {
+    const result = await handleSlackEvent(payload.event).catch((error) => {
       console.error("[relay] Slack webhook event failed", error);
+      return undefined;
     });
+    const jobId = result && "jobId" in result ? result.jobId : undefined;
+    if (jobId) {
+      const job = await getJob(jobId);
+      const agentId = job?.cursorAgentId;
+      if (job?.status === "dispatched" && agentId) {
+        continueAfterResponse(() =>
+          watchDispatchedJob(job.id, agentId, Date.parse(job.createdAt)),
+        );
+      }
+    }
   }
+
+  continueAfterResponse(async () => {
+    await pollSlackOnce().catch((error) => {
+      console.error("[relay] Slack user poll after event failed", error);
+    });
+  });
 
   return NextResponse.json({ ok: true });
 }

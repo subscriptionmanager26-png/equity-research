@@ -1,25 +1,106 @@
 import { ingestAndDispatch } from "@/lib/relay";
 import { getConfig } from "@/lib/config";
-import { getSlackThread, rememberSlackThread } from "@/lib/jobs";
+import {
+  findSlackThreadJob,
+  getJob,
+  getSlackThread,
+  listJobs,
+  markSlackMessageProcessed,
+  rememberSlackThread,
+} from "@/lib/jobs";
 import {
   attachmentsFromSlackEvent,
   fetchThreadContext,
   getSlackBotIdentity,
   isSlackBotMessage,
+  messageTriggersRelay,
+  ackSlackWorking,
   sendSlackMessage,
   shouldIgnoreSlackSubtype,
   stripSlackMentions,
 } from "@/lib/slack";
 import type { SlackInboundEvent } from "@/lib/types";
 
-export async function handleSlackEvent(event: SlackInboundEvent) {
-  if (event.type === "app_mention") {
-    return handleMention(event);
+export const RELAY_SLACK_METADATA_TYPE = "relay_delivery";
+
+export function isSlackThreadReply(event: {
+  ts: string;
+  thread_ts?: string;
+}) {
+  return Boolean(event.thread_ts && event.thread_ts !== event.ts);
+}
+
+export function isRelaySlackOutbound(event: {
+  metadata?: { event_type?: string };
+  bot_id?: string;
+}) {
+  if (event.metadata?.event_type === RELAY_SLACK_METADATA_TYPE) return true;
+  if (event.bot_id) return true;
+  return false;
+}
+
+export function classifySlackEvent(input: {
+  type: string;
+  text?: string;
+  ts: string;
+  thread_ts?: string;
+  trackedThread: boolean;
+  relayOutbound?: boolean;
+}) {
+  if (input.relayOutbound) return "ignore" as const;
+  if (input.type !== "app_mention" && input.type !== "message") {
+    return "ignore" as const;
   }
-  if (event.type === "message") {
+  if (isSlackThreadReply(input) && input.trackedThread) return "follow_up" as const;
+  if (input.type === "app_mention") return "mention" as const;
+  if (messageTriggersRelay(input.text ?? "")) return "mention" as const;
+  return "ignore" as const;
+}
+
+async function resolveTrackedThread(channelId: string, threadTs: string) {
+  const stored = await getSlackThread(channelId, threadTs);
+  if (stored) return stored;
+  const job = findSlackThreadJob(await listJobs(), channelId, threadTs);
+  if (!job) return undefined;
+  return {
+    channelId,
+    threadTs,
+    lastJobId: job.id,
+    updatedAt: job.updatedAt,
+  };
+}
+
+export async function handleSlackEvent(event: SlackInboundEvent) {
+  if (event.type !== "app_mention" && event.type !== "message") {
+    return { ignored: true, reason: event.type };
+  }
+  if (isRelaySlackOutbound(event)) {
+    return { ignored: true, reason: "relay_outbound" };
+  }
+  if (!(await markSlackMessageProcessed(`${event.channel}:${event.ts}`))) {
+    return { ignored: true, reason: "duplicate_message" };
+  }
+
+  const threadTs = isSlackThreadReply(event) ? event.thread_ts : undefined;
+  const tracked = threadTs
+    ? await resolveTrackedThread(event.channel, threadTs)
+    : undefined;
+  const intent = classifySlackEvent({
+    type: event.type,
+    text: event.text,
+    ts: event.ts,
+    thread_ts: event.thread_ts,
+    trackedThread: Boolean(tracked),
+    relayOutbound: false,
+  });
+
+  if (intent === "follow_up") {
     return handleThreadMessage(event);
   }
-  return { ignored: true, reason: event.type };
+  if (intent === "mention") {
+    return handleMention(event);
+  }
+  return { ignored: true, reason: "not_pocketedge" };
 }
 
 async function handleMention(event: SlackInboundEvent) {
@@ -46,7 +127,7 @@ async function handleMention(event: SlackInboundEvent) {
     await sendSlackMessage({
       channelId: event.channel,
       threadTs,
-      text: `Include @${getConfig().slackTriggerWord} with a question, or attach a file in the same message.`,
+      text: "Mention @pocketedge with a question, or attach a file in the same message.",
     }).catch(() => undefined);
     return { ignored: true, reason: "empty" };
   }
@@ -60,16 +141,12 @@ async function handleMention(event: SlackInboundEvent) {
     threadTs,
   });
 
-  await sendSlackMessage({
-    channelId: event.channel,
-    threadTs,
-    text:
-      files.length > 0
-        ? `Sent to Cursor with ${files.length} file${files.length === 1 ? "" : "s"}. I will reply in this thread when it finishes.`
-        : "Sent to Cursor. I will reply in this thread when it finishes.",
-  }).catch((error) => {
-    console.error("[relay] Slack ack failed", error);
+  await ackSlackWorking(event.channel, event.ts).catch((error) => {
+    console.error("[relay] Slack working reaction failed", error);
   });
+
+  const tracked = await resolveTrackedThread(event.channel, threadTs);
+  const prior = tracked?.lastJobId ? await getJob(tracked.lastJobId) : undefined;
 
   try {
     const job = await ingestAndDispatch({
@@ -83,6 +160,7 @@ async function handleMention(event: SlackInboundEvent) {
       slackUserId: event.user,
       slackMessageTs: event.ts,
       files,
+      followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
     });
     return { jobId: job.id };
   } catch (error) {
@@ -111,7 +189,7 @@ async function handleThreadMessage(event: SlackInboundEvent) {
     return { ignored: true, reason: "not_thread_reply" };
   }
 
-  const tracked = await getSlackThread(event.channel, threadTs);
+  const tracked = await resolveTrackedThread(event.channel, threadTs);
   if (!tracked) {
     return { ignored: true, reason: "untracked_thread" };
   }
@@ -132,13 +210,12 @@ async function handleThreadMessage(event: SlackInboundEvent) {
     text ||
     `Process the attached file${files.length === 1 ? "" : "s"} and follow any implied request.`;
 
-  await sendSlackMessage({
-    channelId: event.channel,
-    threadTs,
-    text: "Got it — sending this follow-up to Cursor.",
-  }).catch(() => undefined);
+  await ackSlackWorking(event.channel, event.ts).catch((error) => {
+    console.error("[relay] Slack working reaction failed", error);
+  });
 
   try {
+    const prior = tracked.lastJobId ? await getJob(tracked.lastJobId) : undefined;
     const job = await ingestAndDispatch({
       source: "slack",
       prompt,
@@ -150,6 +227,7 @@ async function handleThreadMessage(event: SlackInboundEvent) {
       slackUserId: event.user,
       slackMessageTs: event.ts,
       files,
+      followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
     });
     return { jobId: job.id, followUp: true };
   } catch (error) {

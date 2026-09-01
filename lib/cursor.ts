@@ -5,7 +5,7 @@ import { cursorPost } from "@/lib/cursor-api";
 import type { Job } from "@/lib/types";
 
 const DEFAULT_AGENT_REPO =
-  "https://origin.cursor.com/kushagra-agarwal/equity-research";
+  "https://github.com/subscriptionmanager26-png/equity-research";
 
 export function replyUrl() {
   const { publicUrl } = getConfig();
@@ -23,7 +23,7 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
   const fileLine = hasFiles
     ? " Download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload."
     : "";
-  const artifactLine = ` For stocks, companies, ETFs, or any financial instrument, follow .cursor/skills/research/financial-analysis/SKILL.md. For long reports, write artifacts/<topic>-report.md; for short answers, reply in chat only. Relay forwards your final message and artifacts unchanged. Do NOT create PDF unless the user explicitly asks for PDF.`;
+  const artifactLine = ` For stocks, companies, ETFs, or any financial instrument, follow .cursor/skills/research/financial-analysis/SKILL.md. For long reports, write the file to artifacts/<topic>-report.md AND copy the same file to /opt/cursor/artifacts/<topic>-report.md (Relay only receives the /opt/cursor/artifacts copy). Short answers stay in chat only. Do NOT create PDF unless the user explicitly asks for PDF.`;
   const noPostLine = ` Do not POST to ${channel}, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or ${channel}.`;
   return `Answer the user's text.${fileLine}${artifactLine}${noPostLine}`;
 }
@@ -101,6 +101,10 @@ export async function buildCloudAgentBody(job: Job) {
     source: { repository, ref },
     target: { autoCreatePr: false },
   };
+  const v0Model = cloudAgentModelV0();
+  const v1Model = cloudAgentModelSelection();
+  if (v0Model) body.model = v0Model;
+  else if (v1Model) body.model = v1Model;
   if (cfg.cursorStatusWebhookUrl && cfg.cursorStatusWebhookSecret) {
     body.webhook = {
       url: cfg.cursorStatusWebhookUrl,
@@ -108,6 +112,53 @@ export async function buildCloudAgentBody(job: Job) {
     };
   }
   return body;
+}
+
+export function standingAgentId() {
+  if (process.env.CURSOR_REUSE_AGENT !== "true") return "";
+  return process.env.CURSOR_AGENT_ID?.trim() || "";
+}
+
+/** v1 model selection from CURSOR_AGENT_MODEL + optional CURSOR_AGENT_MODEL_PARAMS. */
+export function cloudAgentModelSelection():
+  | { id: string; params?: { id: string; value: string }[] }
+  | undefined {
+  const id = process.env.CURSOR_AGENT_MODEL?.trim();
+  if (!id) return undefined;
+  const params = parseModelParams(process.env.CURSOR_AGENT_MODEL_PARAMS);
+  return params.length ? { id, params } : { id };
+}
+
+function parseModelParams(raw?: string) {
+  const params: { id: string; value: string }[] = [];
+  for (const part of (raw ?? "").split(",")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    params.push({
+      id: trimmed.slice(0, eq).trim(),
+      value: trimmed.slice(eq + 1).trim(),
+    });
+  }
+  return params;
+}
+
+/** v0 create uses a single model string when no params are set. */
+function cloudAgentModelV0() {
+  const selection = cloudAgentModelSelection();
+  if (!selection) return undefined;
+  if (selection.params?.length) return undefined;
+  return selection.id;
+}
+
+function isBusyError(body: unknown) {
+  const text = JSON.stringify(body).toLowerCase();
+  return text.includes("agent_busy") || text.includes("already has an active run");
+}
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function dispatchToCursor(job: Job) {
@@ -140,6 +191,33 @@ export async function dispatchToCursor(job: Job) {
   }
 
   const body = await buildCloudAgentBody(job);
+  const existingId = job.followUpAgentId?.trim() || standingAgentId();
+  if (existingId) {
+    let last = await cursorPost(`/v0/agents/${existingId}/followup`, {
+      prompt: { text: (body.prompt as { text: string }).text },
+    });
+    for (let attempt = 0; !last.ok && isBusyError(last.body) && attempt < 8; attempt++) {
+      console.info(
+        `[relay] Standing agent ${existingId} busy; retry ${attempt + 1}`,
+      );
+      await sleep(2000);
+      last = await cursorPost(`/v0/agents/${existingId}/followup`, {
+        prompt: { text: (body.prompt as { text: string }).text },
+      });
+    }
+    if (last.ok) {
+      return {
+        ok: true,
+        status: last.status,
+        body: {
+          id: existingId,
+          ...(typeof last.body === "object" && last.body ? last.body : {}),
+        },
+      };
+    }
+    return last;
+  }
+
   const created = await cursorPost("/v0/agents", body);
   if (created.ok) return created;
 
@@ -147,11 +225,14 @@ export async function dispatchToCursor(job: Job) {
     process.env.CURSOR_AGENT_REPOSITORY?.trim() || DEFAULT_AGENT_REPO;
   const ref = process.env.CURSOR_AGENT_REF?.trim() || "main";
   const promptText = (body.prompt as { text: string }).text;
-  const v1 = await cursorPost("/v1/agents", {
+  const v1Body: Record<string, unknown> = {
     prompt: { text: promptText },
     repos: [{ url: repository, startingRef: ref }],
     autoCreatePR: false,
     skipReviewerRequest: true,
-  });
+  };
+  const v1Model = cloudAgentModelSelection();
+  if (v1Model) v1Body.model = v1Model;
+  const v1 = await cursorPost("/v1/agents", v1Body);
   return v1.ok ? v1 : created;
 }

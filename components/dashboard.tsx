@@ -199,16 +199,18 @@ export function Dashboard() {
             Relay
           </h1>
           <p className="max-w-xl text-sm leading-6 text-zinc-400">
-            Message your Telegram bot or include <code className="font-mono text-[12px] text-sky-200">@{status?.slackTriggerWord ?? "pocketedge"}</code> in Slack. Relay posts to Cursor and replies in the same chat or thread.
+            Telegram stays for questions and answers. Watch live job status and
+            open the Cursor run from Traffic below — agent links are not posted
+            in chat.
           </p>
         </div>
         <a
-          href="https://cursor.com/automations/abd6db4e-a511-11f1-a7d1-d6b4613131ce"
+          href="https://cursor.com/agents"
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-sm text-zinc-400 transition hover:text-white"
         >
-          Open automation
+          Cursor agents
           <ArrowUpRight className="size-3.5" />
         </a>
       </header>
@@ -226,7 +228,7 @@ export function Dashboard() {
           ok={Boolean(status?.cursorConfigured)}
           detail={
             status?.cursorConfigured
-              ? "API token loaded. Relay launches a cloud agent on this repo for each message."
+              ? "API token loaded. Each Telegram/Slack question launches a new cloud agent on this GitHub repo."
               : "Set CURSOR_WEBHOOK_TOKEN in .env.local (Cursor API key)."
           }
         />
@@ -417,7 +419,7 @@ export function Dashboard() {
             <CardTitle>Traffic</CardTitle>
             <CardDescription>
               {status
-                ? `${status.jobCount} job${status.jobCount === 1 ? "" : "s"} recorded`
+                ? `${status.jobCount} job${status.jobCount === 1 ? "" : "s"} — status and Cursor links live here`
                 : "Loading jobs…"}
             </CardDescription>
           </CardHeader>
@@ -450,16 +452,38 @@ export function Dashboard() {
                             {job.id.slice(0, 18)}
                           </span>
                         </div>
-                        <span className="text-xs text-zinc-500">
-                          {formatTime(job.updatedAt)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {job.cursorAgentId ? (
+                            <a
+                              href={`https://cursor.com/agents/${job.cursorAgentId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-sky-300 hover:text-sky-200"
+                            >
+                              Open in Cursor
+                              <ArrowUpRight className="size-3.5" />
+                            </a>
+                          ) : null}
+                          <span className="text-xs text-zinc-500">
+                            {formatTime(job.updatedAt)}
+                          </span>
+                        </div>
                       </div>
                       <p className="mt-3 text-sm leading-6 text-zinc-200">
                         {job.prompt}
                       </p>
                       {job.files?.length ? (
                         <p className="mt-1 text-xs text-sky-200/80">
-                          {job.files.map((file) => file.name).join(", ")}
+                          Attached: {job.files.map((file) => file.name).join(", ")}
+                        </p>
+                      ) : null}
+                      {job.pendingArtifacts ? (
+                        <p className="mt-2 text-xs text-amber-200/90">
+                          Waiting for Cursor artifact
+                          {job.pendingArtifacts.mentionedPaths.length
+                            ? `: ${job.pendingArtifacts.mentionedPaths.join(", ")}`
+                            : ""}{" "}
+                          (attempt {job.pendingArtifacts.attempts})
                         </p>
                       ) : null}
                       {job.reply ? (

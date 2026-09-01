@@ -9,10 +9,10 @@ This repo includes the financial-analysis skill at .cursor/skills/research/finan
 
 You decide the delivery format:
 - Short answers (flights, facts, quick lookups): reply directly in your final chat message. No artifact file needed.
-- Long reports (especially financial analysis): write the full report to artifacts/<topic>-report.md (e.g. artifacts/itc-equity-report.md) and give a 1–2 sentence summary in chat.
+- Long reports (especially financial analysis): write the full report to BOTH artifacts/<topic>-report.md in the workspace AND /opt/cursor/artifacts/<topic>-report.md (same bytes). Relay can only download files from /opt/cursor/artifacts/. Then give a 1–2 sentence summary in chat.
 - Do NOT create PDF files unless the user explicitly asks for a PDF.
 
-Relay forwards your final chat message and any files under artifacts/ unchanged to the same Telegram chat or Slack thread.
+Relay forwards your final chat message and any files published under /opt/cursor/artifacts/ to the same Telegram chat or Slack thread.
 
 Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
 Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.`;

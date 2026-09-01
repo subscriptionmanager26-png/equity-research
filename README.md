@@ -44,19 +44,17 @@ To use a **channel or group**, add the bot as an **admin** (it must be allowed t
 
 Relay ignores channel posts that do not mention the bot, so the channel does not trigger a Cursor run on every message.
 
-## Slack (trigger word: `pocketedge`)
+## Slack
 
-There is **no Slack app named "Pocketedge"**. Relay watches for the word **`pocketedge`** in messages (change with `SLACK_TRIGGER_WORD`). Example:
+On **Vercel production**, Slack uses the Events API (same pattern as Telegram). Create the app from [docs/slack-app-manifest.yaml](docs/slack-app-manifest.yaml), then set `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET`. Invite `@Relay` and mention it:
 
 ```
-@pocketedge summarize today's standup
+@Relay analyze SBIN
 ```
 
-Thread replies in the same conversation are treated as follow-ups without saying `pocketedge` again.
+Thread replies are follow-ups. Full steps: [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
 
-**Quick start:** set `SLACK_USER_TOKEN` (`xoxp-…`) in `.env.local` — see [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for scopes and step-by-step help.
-
-**Production:** create a Slack app and set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` (Socket Mode). Full instructions in [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
+**Local only:** `SLACK_USER_TOKEN` (`xoxp-…`) + trigger word `pocketedge` (poller). Socket Mode is also local-only.
 
 Slack and Telegram stay fully separate — answers never cross platforms.
 
@@ -84,7 +82,7 @@ The prompt is `lib/automation-prompt.ts` and is sent as Cloud Agents `prompt.tex
 
 ## Cloud Agent environment
 
-Cloud agents check out **this repository** (`CURSOR_AGENT_REPOSITORY`, default Origin URL) so runs include `.cursor/environment.json` and **project skills**. Personal Cursor skills on your laptop are **not** copied to cloud VMs.
+Cloud agents check out **this repository** (`CURSOR_AGENT_REPOSITORY`, default `https://github.com/subscriptionmanager26-png/equity-research`) so runs include `.cursor/environment.json` and **project skills**. Personal Cursor skills on your laptop are **not** copied to cloud VMs.
 
 The **financial-analysis** skill lives at `.cursor/skills/research/financial-analysis/SKILL.md` (also linked from `.agents/skills/`). Equity/stock/ETF questions should follow it. Overview: [docs/financial-analysis/README.md](docs/financial-analysis/README.md).
 
@@ -96,13 +94,13 @@ Optional: point Cursor cloud-agent **statusChange** webhooks at `{PUBLIC_URL}/ap
 
 | Variable | Purpose |
 | --- | --- |
-| `CURSOR_WEBHOOK_TOKEN` | Cursor API key (`crsr_…`) |
+| `CURSOR_AGENT_MODEL` | Optional. Cloud Agent model id (`grok-4.6`, `composer-2.5`, `claude-opus-5`, …). Omit = Cursor account default |
+| `CURSOR_AGENT_MODEL_PARAMS` | Optional. Comma-separated `effort=high,fast=false` (and other params from `GET /v1/models`) |
 | `CURSOR_WEBHOOK_URL` | Optional Automations webhook; unused unless `CURSOR_USE_AUTOMATION_WEBHOOK=true` |
 | `TELEGRAM_BOT_TOKEN` | BotFather token |
 | `TELEGRAM_CHAT_ID` | Optional fixed chat. Otherwise the first `/start` is remembered |
-| `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-…`) |
-| `SLACK_APP_TOKEN` | Slack app-level token for Socket Mode (`xapp-…`) |
-| `SLACK_SIGNING_SECRET` | For HTTPS Events API at `/api/slack/events` |
+| `SLACK_BOT_TOKEN` | Bot token (`xoxb-…`) for Vercel Events API |
+| `SLACK_SIGNING_SECRET` | Slack request signing secret for `/api/slack/events` |
 | `REPLY_WEBHOOK_SECRET` | Shared secret for `/api/reply` |
 | `PUBLIC_URL` | Optional public origin (`/api/reply`, Slack attachment URLs) |
 | `TELEGRAM_WEBHOOK_SECRET` | Only if you register `https://your-host/api/telegram/webhook` with Telegram |

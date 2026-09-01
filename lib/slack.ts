@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { WebClient } from "@slack/web-api";
 
 import { getConfig } from "@/lib/config";
+import { markSlackMessageProcessed } from "@/lib/jobs";
 import { updateStore } from "@/lib/store";
 import type { JobFile, SlackInboundEvent } from "@/lib/types";
 
@@ -40,6 +41,9 @@ export function messageTriggersRelay(text: string) {
   const cfg = getConfig();
   const body = text ?? "";
   if (cfg.slackMentionUserId && body.includes(`<@${cfg.slackMentionUserId}>`)) {
+    return true;
+  }
+  if (/<@[A-Z0-9]+\|[^>]*pocketedge[^>]*>/i.test(body)) {
     return true;
   }
   const stripped = stripSlackMentions(body);
@@ -151,18 +155,89 @@ export async function sendSlackMessage(input: {
   const chunks = splitSlackText(input.text);
   let lastTs: string | undefined;
   for (const chunk of chunks) {
-    const result = await getSlackClient().chat.postMessage({
+    const payload = {
       channel: input.channelId,
       text: chunk,
       thread_ts: input.threadTs,
-      mrkdwn: true,
-    });
+      reply_broadcast: Boolean(input.threadTs && input.channelId.startsWith("D")),
+      mrkdwn: true as const,
+      metadata: {
+        event_type: "relay_delivery",
+        event_payload: { app: "relay" },
+      },
+    };
+    let result = await getSlackClient().chat.postMessage(payload);
+    if (!result.ok && String(result.error ?? "").includes("metadata")) {
+      const { metadata: _ignored, ...withoutMeta } = payload;
+      result = await getSlackClient().chat.postMessage(withoutMeta);
+    }
     if (!result.ok) {
       throw new Error(result.error ?? "Slack chat.postMessage failed");
     }
     lastTs = result.ts;
+    if (lastTs) {
+      await markSlackMessageProcessed(`${input.channelId}:${lastTs}`).catch(
+        () => undefined,
+      );
+    }
   }
   return lastTs;
+}
+
+const SLACK_WORKING_REACTION = "eyes";
+const SLACK_DONE_REACTION = "thumbsup";
+
+export async function addSlackReaction(input: {
+  channelId: string;
+  timestamp: string;
+  name: string;
+}) {
+  const result = await getSlackClient().reactions.add({
+    channel: input.channelId,
+    timestamp: input.timestamp,
+    name: input.name,
+  });
+  if (result.ok || result.error === "already_reacted") return;
+  throw new Error(result.error ?? "Slack reactions.add failed");
+}
+
+export async function removeSlackReaction(input: {
+  channelId: string;
+  timestamp: string;
+  name: string;
+}) {
+  const result = await getSlackClient().reactions.remove({
+    channel: input.channelId,
+    timestamp: input.timestamp,
+    name: input.name,
+  });
+  if (result.ok || result.error === "no_reaction") return;
+  throw new Error(result.error ?? "Slack reactions.remove failed");
+}
+
+/** 👀 — picked up, still working. */
+export async function ackSlackWorking(channelId: string, timestamp?: string) {
+  if (!timestamp) return;
+  await addSlackReaction({
+    channelId,
+    timestamp,
+    name: SLACK_WORKING_REACTION,
+  });
+}
+
+/** Swap 👀 for 👍 when the Cursor answer is posted. */
+export async function ackSlackDone(channelId: string, timestamp?: string) {
+  if (!timestamp) return;
+  await removeSlackReaction({
+    channelId,
+    timestamp,
+    name: SLACK_WORKING_REACTION,
+  }).catch(() => undefined);
+  await addSlackReaction({
+    channelId,
+    timestamp,
+    name: SLACK_DONE_REACTION,
+  });
 }
 
 export async function sendSlackFile(input: {

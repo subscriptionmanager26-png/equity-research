@@ -1,4 +1,38 @@
-# Slack setup — reply as **you**, no bot in every channel
+# Slack setup
+
+Relay already handles Slack. Production on Vercel cannot run Socket Mode or the user-token poller (those need a long-lived process). Use the **Events API** webhook, same idea as Telegram.
+
+## Production (Vercel) — this is what you want
+
+1. Open [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**.
+2. Paste [docs/slack-app-manifest.yaml](slack-app-manifest.yaml). The request URL is already `https://equity-research-ivory.vercel.app/api/slack/events`.
+3. **Install App** to your workspace.
+4. Copy:
+   - **Bot User OAuth Token** (`xoxb-…`) → `SLACK_BOT_TOKEN`
+   - **Signing Secret** (Basic Information) → `SLACK_SIGNING_SECRET`
+5. Put those on Vercel **Production** (and `.env.local` if you develop locally). Redeploy is not required after env change, but the next Slack event needs the new values — Vercel applies env on the next invocation.
+6. Invite the bot: `/invite @Relay` in each channel you want to use.
+7. Mention it:
+
+```
+@Relay analyze SBIN
+```
+
+Replies **in that same Slack thread** (no `@pocketedge` needed) are follow-up questions on the same Cursor agent. A new top-level message still needs `@pocketedge`.
+
+Telegram and Slack stay separate. A Slack question is answered in that Slack thread only.
+
+### Slack app settings if you created the app by hand
+
+- **Event Subscriptions** → On → Request URL: `https://equity-research-ivory.vercel.app/api/slack/events`
+- Subscribe to bot events: `app_mention`, `message.channels`, `message.groups`, `message.im`, `message.mpim`
+- Bot token scopes: `app_mentions:read`, `chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `files:read`, `files:write`, `users:read`, `reactions:write`, `channels:join`
+
+Invite `@Relay` / `@newsagent` to each **channel** you want Events API coverage in (`/invite @Relay`). On Vercel the user-token search poller only runs when Relay is already handling another request (dashboard refresh, Telegram, or a Slack event), so a channel message can sit unseen until then if the bot is not in the channel.
+
+---
+
+## Local only — reply as **you** (no bot invite)
 
 You do **not** need a Slack bot invited to every channel.
 
@@ -33,6 +67,7 @@ At [api.slack.com/apps](https://api.slack.com/apps) → your app → **OAuth & P
 | `mpim:history` | Group DMs |
 | `channels:read`, `groups:read` | Resolve channels |
 | `chat:write` | Post replies **as you** |
+| `reactions:write` | 👀 while working, 👍 when the answer is posted |
 | `files:write` | Send markdown attachments |
 | `users:read` | Identify senders |
 
@@ -40,9 +75,11 @@ Reinstall/reauthorize after adding scopes.
 
 ---
 
-## Bot token (`xoxb-…`) — you probably don't want this
+## Bot token (`xoxb-…`) on Vercel
 
-A **bot token** posts as a **bot user**. It also usually must be **invited** to each channel (`/invite @bot`).
+On Vercel this **is** the right token (Events API). The table below only applies to **local** “reply as you” vs “reply as a bot”.
+
+A **bot token** posts as a **bot user**. It must be **invited** to each channel (`/invite @Relay`).
 
 | | User token `xoxp-` | Bot token `xoxb-` |
 | --- | --- | --- |

@@ -56,6 +56,10 @@ export type Job = {
   cursorHttpStatus?: number;
   cursorBody?: unknown;
   cursorAgentId?: string;
+  /** When set, Relay follows up this Cloud Agent instead of creating a new one. */
+  followUpAgentId?: string;
+  telegramInboundMessageId?: number;
+  telegramAckMessageId?: number;
   pendingArtifacts?: PendingArtifacts;
   reply?: JobReply;
   error?: string;
@@ -99,6 +103,7 @@ export type StoreData = {
   slackSearchCursor?: string;
   slackPollCursors?: Record<string, string>;
   processedSlackMessages?: string[];
+  slackLastPollAt?: string;
   telegramOffset?: number;
 };
 
@@ -119,6 +124,7 @@ export type SlackInboundEvent = {
   channel: string;
   bot_id?: string;
   subtype?: string;
+  metadata?: { event_type?: string };
   files?: {
     id: string;
     name?: string;

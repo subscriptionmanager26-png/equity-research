@@ -29,10 +29,10 @@ describe("extractMentionedArtifactPaths", () => {
     assert.deepEqual(paths, ["artifacts/hdfcbank-equity-report.md"]);
   });
 
-  it("ignores prompt examples", () => {
+  it("ignores bare filenames like package.json", () => {
     const paths = extractMentionedArtifactPaths(
-      "write artifacts/itc-equity-report.md e.g. artifacts/<topic>-report.md",
+      "checked out with package.json name telegram-agent-relay",
     );
-    assert.deepEqual(paths, ["artifacts/itc-equity-report.md"]);
+    assert.deepEqual(paths, []);
   });
 });

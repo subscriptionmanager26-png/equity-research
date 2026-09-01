@@ -31,6 +31,9 @@ export async function createJob(input: {
   slackMessageTs?: string;
   threadContext?: string;
   files?: Job["files"];
+  followUpAgentId?: string;
+  telegramInboundMessageId?: number;
+  telegramAckMessageId?: number;
 }): Promise<Job> {
   const now = new Date().toISOString();
   const job: Job = {
@@ -47,6 +50,9 @@ export async function createJob(input: {
     slackMessageTs: input.slackMessageTs,
     threadContext: input.threadContext,
     prompt: input.prompt,
+    followUpAgentId: input.followUpAgentId,
+    telegramInboundMessageId: input.telegramInboundMessageId,
+    telegramAckMessageId: input.telegramAckMessageId,
     files: input.files,
     status: "queued",
     events: [
@@ -151,6 +157,35 @@ export async function getJob(jobId: string): Promise<Job | undefined> {
 export async function listJobs(): Promise<Job[]> {
   const data = await getStore();
   return data.jobs;
+}
+
+export function findSlackThreadJob(
+  jobs: Job[],
+  channelId: string,
+  threadTs: string,
+): Job | undefined {
+  return jobs.find(
+    (job) =>
+      job.source === "slack" &&
+      job.slackChannelId === channelId &&
+      job.slackThreadTs === threadTs &&
+      Boolean(job.cursorAgentId ?? job.followUpAgentId),
+  );
+}
+
+export function findTelegramFollowUpJob(
+  jobs: Job[],
+  chatId: number,
+  replyToMessageId: number,
+): Job | undefined {
+  return jobs.find((job) => {
+    if (job.chatId !== chatId) return false;
+    return (
+      job.reply?.telegramMessageId === replyToMessageId ||
+      job.telegramAckMessageId === replyToMessageId ||
+      job.telegramInboundMessageId === replyToMessageId
+    );
+  });
 }
 
 export async function rememberChat(chat: {
@@ -260,7 +295,13 @@ function rememberSlackThreadInStore(
   input: SlackThreadRef,
 ) {
   data.slackThreads = data.slackThreads ?? {};
-  data.slackThreads[slackThreadKey(input.channelId, input.threadTs)] = input;
+  const key = slackThreadKey(input.channelId, input.threadTs);
+  const existing = data.slackThreads[key];
+  data.slackThreads[key] = {
+    ...existing,
+    ...input,
+    lastJobId: input.lastJobId ?? existing?.lastJobId,
+  };
 }
 
 function upsertChat(

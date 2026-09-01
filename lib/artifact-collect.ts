@@ -54,7 +54,9 @@ export function extractMentionedArtifactPaths(text: string) {
   }
   for (const match of text.matchAll(ARTIFACT_PATH_RE)) {
     const raw = match[1];
-    if (raw) paths.add(normalizeArtifactPath(raw));
+    if (!raw) continue;
+    if (!raw.includes("artifacts/") && !raw.startsWith("/opt/cursor/")) continue;
+    paths.add(normalizeArtifactPath(raw));
   }
   return [...paths].filter(isConcreteArtifactPath);
 }

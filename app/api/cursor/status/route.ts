@@ -104,6 +104,19 @@ export async function POST(request: Request) {
     result.reason !== "already_settling"
   ) {
     console.warn(`[relay] Webhook settle failed for ${job.id}`, result);
+    continueAfterResponse(async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+        const retry = await settleAgentJob(job.id, agentId, { trigger: "poll" });
+        if (retry.ok) {
+          if (retry.followUp) await runArtifactFollowUp(retry.followUp);
+          return;
+        }
+        if (retry.reason === "already_replied" || retry.reason === "already_settling") {
+          return;
+        }
+      }
+    });
   }
 
   if (result.followUp) {

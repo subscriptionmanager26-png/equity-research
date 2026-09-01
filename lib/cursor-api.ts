@@ -8,19 +8,35 @@ function apiToken() {
   return getConfig().cursorWebhookToken;
 }
 
+function isRetryableCursorStatus(status: number) {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
 async function cursorGet<T>(path: string): Promise<T> {
   const token = apiToken();
   if (!token) throw new Error("Cursor API token is not configured");
-  const response = await fetch(`${API}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`Cursor API ${path} HTTP ${response.status}: ${text.slice(0, 300)}`);
+  let lastError = "Cursor API request failed";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(`${API}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    if (response.ok) {
+      return JSON.parse(text) as T;
+    }
+    lastError = `Cursor API ${path} HTTP ${response.status}: ${text.slice(0, 300)}`;
+    if (!isRetryableCursorStatus(response.status) || attempt === 3) {
+      throw new Error(lastError);
+    }
+    const retryAfter = Number(response.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter * 1000, 8_000)
+      : Math.min(800 * 2 ** attempt, 5_000);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
-  return JSON.parse(text) as T;
+  throw new Error(lastError);
 }
 
 export async function cursorPost<T>(
@@ -227,6 +243,19 @@ export async function getAgentConversation(agentId: string) {
 
 export function getConversationText(messages: ConversationMessage[]) {
   return messages.map((message) => message.text ?? "").join("\n");
+}
+
+export function conversationIncludesPrompt(
+  messages: { type?: string; text?: string }[],
+  prompt: string,
+) {
+  const needle = prompt.trim().slice(0, 80);
+  if (!needle) return true;
+  return messages.some(
+    (message) =>
+      message.type === "user_message" &&
+      (message.text ?? "").includes(needle),
+  );
 }
 
 /** Final assistant message — Relay passes this through unchanged. */

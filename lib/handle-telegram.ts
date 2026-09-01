@@ -1,6 +1,6 @@
 import { getConfig } from "@/lib/config";
 import { ingestAndDispatch } from "@/lib/relay";
-import { logInbound, rememberChat } from "@/lib/jobs";
+import { findTelegramFollowUpJob, listJobs, logInbound, rememberChat } from "@/lib/jobs";
 import { getStore } from "@/lib/store";
 import {
   attachmentsFromMessage,
@@ -50,6 +50,36 @@ export async function handleTelegramMessage(message: TelegramMessage) {
     return { ignored: true };
   }
 
+  if (text === "/status") {
+    await logInbound({ chatId, text, kind: "command" });
+    const jobs = (await listJobs())
+      .filter((job) => job.chatId === chatId)
+      .slice(0, 5);
+    if (jobs.length === 0) {
+      await sendTelegramMessage({
+        chatId,
+        text: "No tasks yet in this chat. Send a question and I will start a Cursor agent.",
+        replyToMessageId: message.message_id,
+      }).catch(() => undefined);
+      return { command: text };
+    }
+    const lines = jobs.map((job) => {
+      const title = (job.prompt || "task").replace(/\s+/g, " ").slice(0, 60);
+      const files = job.reply?.files?.length
+        ? ` · files ${job.reply.files.join(", ")}`
+        : job.pendingArtifacts
+          ? " · waiting for report file"
+          : "";
+      return `• ${job.status} — ${title}${files}`;
+    });
+    await sendTelegramMessage({
+      chatId,
+      text: `Latest tasks:\n${lines.join("\n")}\n\nWatch runs on the Relay dashboard (not in this chat).`,
+      replyToMessageId: message.message_id,
+    }).catch(() => undefined);
+    return { command: text };
+  }
+
   if (text === "/start" || text === "/help") {
     await logInbound({ chatId, text, kind: "command" });
     const { cursorConfigured } = getConfig();
@@ -62,10 +92,12 @@ export async function handleTelegramMessage(message: TelegramMessage) {
           ? "Send a task in plain text, or attach a file with a caption."
           : `In this channel, tag ${handle} with the task. I only run when mentioned.`,
         "I post it to a Cursor cloud agent in this repo, and the agent replies here.",
+        "Reply to my answer (Telegram Reply) to continue the same agent. A new message starts a new run.",
+        "Watch live status on the Relay dashboard. I will not send Cursor links here.",
         cursorConfigured
           ? "Cursor cloud agent API: configured."
           : "Cursor API: missing. Set CURSOR_WEBHOOK_TOKEN.",
-        "Commands: /start, /help",
+        "Commands: /start, /help, /status",
       ].join("\n"),
     }).catch(() => undefined);
     return { command: text };
@@ -82,14 +114,26 @@ export async function handleTelegramMessage(message: TelegramMessage) {
     files: files.map((file) => file.name),
   });
 
-  await sendTelegramMessage({
+  const parent = message.reply_to_message
+    ? findTelegramFollowUpJob(
+        await listJobs(),
+        chatId,
+        message.reply_to_message.message_id,
+      )
+    : undefined;
+  const followUpAgentId = parent?.cursorAgentId ?? parent?.followUpAgentId;
+
+  const ackId = await sendTelegramMessage({
     chatId,
     text: files.length
       ? `Sent to Cursor with ${files.length} file${files.length === 1 ? "" : "s"}. I will reply here when it finishes.`
-      : "Sent to Cursor. I will reply here when it finishes.",
+      : followUpAgentId
+        ? "Sending this follow-up to the same Cursor agent."
+        : "Sent to Cursor. I will reply here when it finishes.",
     replyToMessageId: message.message_id,
   }).catch((error) => {
     console.error("[relay] Telegram ack failed", error);
+    return undefined;
   });
 
   try {
@@ -100,6 +144,9 @@ export async function handleTelegramMessage(message: TelegramMessage) {
       username: message.from?.username ?? message.chat.username,
       displayName: name,
       files,
+      followUpAgentId,
+      telegramInboundMessageId: message.message_id,
+      telegramAckMessageId: ackId,
     });
     return { jobId: job.id };
   } catch (error) {

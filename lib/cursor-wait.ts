@@ -1,7 +1,9 @@
 import {
   agentIsDone,
+  conversationIncludesPrompt,
   extractAgentId,
   getAgent,
+  getAgentConversation,
 } from "@/lib/cursor-api";
 import { settleAgentJob, isSettling, runArtifactFollowUp } from "@/lib/cursor-settle";
 import { addJobEvent, getJob, listJobs, reclaimStaleDeliveringJobs } from "@/lib/jobs";
@@ -53,6 +55,14 @@ async function loop() {
   }
 }
 
+export async function watchDispatchedJob(
+  jobId: string,
+  agentId: string,
+  startedAt: number,
+) {
+  return waitAndSettle(jobId, agentId, startedAt);
+}
+
 async function waitAndSettle(jobId: string, agentId: string, startedAt: number) {
   const job = await getJob(jobId);
   while (true) {
@@ -71,7 +81,7 @@ async function waitAndSettle(jobId: string, agentId: string, startedAt: number) 
           jobId,
           job,
           status: "error",
-          message: `Cursor started (${agentId}) but did not finish in time. Open https://cursor.com/agents/${agentId}`,
+          message: `Cursor started but did not finish in time. Check the Relay dashboard for this job.`,
         }).catch(() => undefined);
       }
       return;
@@ -87,6 +97,13 @@ async function waitAndSettle(jobId: string, agentId: string, startedAt: number) 
       if (!agentIsDone(agent.status)) {
         await sleep(POLL_MS);
         continue;
+      }
+      if (current.followUpAgentId) {
+        const conversation = await getAgentConversation(agentId);
+        if (!conversationIncludesPrompt(conversation.messages ?? [], current.prompt)) {
+          await sleep(POLL_MS);
+          continue;
+        }
       }
 
       await settleAgentJob(jobId, agentId, { trigger: "poll" }).then((result) => {

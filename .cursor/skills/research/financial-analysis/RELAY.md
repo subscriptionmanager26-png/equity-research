@@ -4,6 +4,6 @@ This skill is installed as a **project skill** so Cursor Cloud Agents (Telegram/
 
 When running inside Relay:
 
-- User-facing deliverable when a file is needed: `artifacts/<topic>-report.md`. Short answers can stay in chat only.
+- User-facing deliverable when a file is needed: write `artifacts/<topic>-report.md` **and** copy it to `/opt/cursor/artifacts/<topic>-report.md`. Relay only downloads the `/opt/cursor/artifacts/` copy. Short answers can stay in chat only.
 - Chat reply: 1–2 sentence summary.
 - PDF (`templates/build_pdf.py`) only if the user explicitly asks for a PDF.

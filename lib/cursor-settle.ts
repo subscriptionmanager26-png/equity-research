@@ -1,5 +1,6 @@
 import {
   agentFailed,
+  conversationIncludesPrompt,
   extractAgentId,
   getAgent,
   getAgentConversation,
@@ -129,6 +130,17 @@ export async function settleAgentJob(
       };
     }
 
+    if (claimed.followUpAgentId) {
+      const preview = await getAgentConversation(agentId);
+      if (!conversationIncludesPrompt(preview.messages ?? [], claimed.prompt)) {
+        await addJobEvent(jobId, {
+          type: "cursor_wait",
+          detail: "Follow-up not in conversation yet; waiting",
+        }, { status: "dispatched" });
+        return { ok: false, reason: "followup_not_ready" };
+      }
+    }
+
     const trigger = options.trigger ?? "poll";
     const artifactOptions = artifactCollectionOptions(options);
 
@@ -147,15 +159,13 @@ export async function settleAgentJob(
     const files = allowPdf
       ? collected
       : collected.filter((file) => !/\.pdf$/i.test(file.name));
-    const link =
-      agent.url ?? agent.target?.url ?? `https://cursor.com/agents/${agentId}`;
     let message =
       answer ||
       (files.length
         ? `Cursor attached ${files.length} file${files.length === 1 ? "" : "s"}.`
         : failed
-          ? `Cursor agent ended with ${agent.status}. ${link}`
-          : `Cursor finished but did not leave a text answer. ${link}`);
+          ? `Cursor agent ended with ${agent.status}.`
+          : `Cursor finished but did not leave a text answer.`);
 
     if (!failed && files.length === 0) {
       const resend = findThreadReportResendFallback(claimed, await listJobs());
@@ -169,7 +179,7 @@ export async function settleAgentJob(
 
     const missingArtifacts = mentionedArtifactsMissing(assistantText, files);
     if (missingArtifacts.length && !failed && files.length === 0) {
-      message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API yet. Relay will retry the file attachment — or open ${link} to download it._`;
+      message += `\n\n_Note: the report file is not in Cursor’s download API yet. Relay will retry attaching it._`;
     }
 
     const delivery = await deliverReply({

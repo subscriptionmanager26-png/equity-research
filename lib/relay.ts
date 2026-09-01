@@ -16,7 +16,7 @@ import {
   latestChat,
   listChats,
 } from "@/lib/jobs";
-import { sendSlackFile, sendSlackMessage } from "@/lib/slack";
+import { ackSlackDone, sendSlackFile, sendSlackMessage } from "@/lib/slack";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
 import type { Job, JobSource, TelegramChat } from "@/lib/types";
 
@@ -32,6 +32,9 @@ export async function ingestAndDispatch(input: {
   slackUserId?: string;
   slackMessageTs?: string;
   files?: Job["files"];
+  followUpAgentId?: string;
+  telegramInboundMessageId?: number;
+  telegramAckMessageId?: number;
 }): Promise<Job> {
   const cfg = getConfig();
   const fallback = input.source === "dashboard" ? await latestChat() : undefined;
@@ -70,7 +73,6 @@ export async function ingestAndDispatch(input: {
       await notifyJobFailure(job, [
         "I reached Cursor, but the cloud agent did not start.",
         `${detail}.`,
-        "Relay launches agents via the Cloud Agents API (not the disabled automation).",
       ].join(" "));
       return (await getJob(job.id)) ?? job;
     }
@@ -229,6 +231,13 @@ async function deliverSlackReply(
       text: `Could not attach file(s): ${uploadErrors.join("; ")}`,
     }).catch(() => undefined);
   }
+
+  await ackSlackDone(
+    job.slackChannelId,
+    job.slackMessageTs ?? job.slackThreadTs,
+  ).catch((error) => {
+    console.error("[relay] Slack done reaction failed", error);
+  });
 
   return {
     slackChannelId: job.slackChannelId,
