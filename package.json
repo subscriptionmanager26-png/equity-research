@@ -13,6 +13,7 @@
     "@base-ui/react": "^1.7.0",
     "@slack/socket-mode": "^3.0.1",
     "@slack/web-api": "^8.1.1",
+    "@vercel/blob": "^2.8.0",
     "@vercel/kv": "^3.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

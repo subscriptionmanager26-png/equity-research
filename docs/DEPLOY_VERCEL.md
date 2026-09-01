@@ -9,7 +9,7 @@ Vercel gives you a **stable HTTPS URL** for Cursor status webhooks — no localt
 | Telegram | Long-poll (`getUpdates`) | Webhook → `/api/telegram/webhook` |
 | Cursor status | `/api/cursor/status` | Same (auto `PUBLIC_URL` from `VERCEL_URL`) |
 | Cursor backup poll | In-process waiter | Manual `GET /api/cursor/poll` (Hobby forbids more than one cron per day; status webhook is the live path) |
-| Job store | `.data/store.json` | **Vercel KV** (required) |
+| Job store | `.data/store.json` | **Vercel Blob** (`equity-research-blob`, Hobby-free) |
 | Slack user poller | Local only | Use Slack Events API → `/api/slack/events` |
 
 ## Steps
@@ -23,12 +23,12 @@ vercel link
 
 Import this repo in the [Vercel dashboard](https://vercel.com/new) if you prefer the UI.
 
-### 2. Add Vercel KV (required for job history)
+### 2. Add Vercel Blob (required for job history)
 
-1. Vercel project → **Storage** → **Create Database** → **KV**
-2. Connect it to the project — this sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` automatically
+1. Vercel project → **Storage** → **Create Database** → **Blob**
+2. Name it (e.g. `equity-research-blob`) and connect it to this project — this sets `BLOB_STORE_ID` and `BLOB_READ_WRITE_TOKEN`
 
-Without KV, serverless functions have no persistent disk and job/chat state is lost between requests.
+Without Blob, serverless functions have no shared state and job/chat records are lost between Telegram and Cursor webhooks.
 
 ### 3. Set environment variables
 

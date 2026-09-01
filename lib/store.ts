@@ -6,6 +6,7 @@ import type { StoreData } from "@/lib/types";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
 const KV_KEY = "relay:store";
+const BLOB_PATH = "relay/store.json";
 
 const emptyStore = (): StoreData => ({
   jobs: [],
@@ -17,6 +18,12 @@ const emptyStore = (): StoreData => ({
 });
 
 let queue: Promise<unknown> = Promise.resolve();
+
+function blobEnabled() {
+  return Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID,
+  );
+}
 
 function kvEnabled() {
   return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
@@ -62,6 +69,31 @@ function normalizeStore(parsed: StoreData): StoreData {
   };
 }
 
+async function readStoreFromBlob(): Promise<StoreData> {
+  const { get } = await import("@vercel/blob");
+  const result = await get(BLOB_PATH, {
+    access: "private",
+    useCache: false,
+  });
+  if (!result || result.statusCode !== 200 || !result.stream) {
+    return emptyStore();
+  }
+  const raw = await new Response(result.stream).text();
+  if (!raw.trim()) return emptyStore();
+  return normalizeStore(JSON.parse(raw) as StoreData);
+}
+
+async function writeStoreToBlob(data: StoreData): Promise<void> {
+  const { put } = await import("@vercel/blob");
+  await put(BLOB_PATH, JSON.stringify(data), {
+    access: "private",
+    allowOverwrite: true,
+    addRandomSuffix: false,
+    contentType: "application/json",
+    cacheControlMaxAge: 60,
+  });
+}
+
 async function readStoreFromKv(): Promise<StoreData> {
   const { kv } = await import("@vercel/kv");
   const parsed = await kv.get<StoreData>(KV_KEY);
@@ -74,11 +106,13 @@ async function writeStoreToKv(data: StoreData): Promise<void> {
 }
 
 async function readStore(): Promise<StoreData> {
+  if (blobEnabled()) return readStoreFromBlob();
   if (kvEnabled()) return readStoreFromKv();
   return readStoreFromFile();
 }
 
 async function writeStore(data: StoreData): Promise<void> {
+  if (blobEnabled()) return writeStoreToBlob(data);
   if (kvEnabled()) return writeStoreToKv(data);
   return writeStoreToFile(data);
 }
@@ -99,5 +133,7 @@ export function getStore(): Promise<StoreData> {
 }
 
 export function storeBackend() {
-  return kvEnabled() ? "vercel-kv" : "local-file";
+  if (blobEnabled()) return "vercel-blob";
+  if (kvEnabled()) return "vercel-kv";
+  return "local-file";
 }

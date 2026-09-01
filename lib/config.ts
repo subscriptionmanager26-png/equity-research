@@ -1,3 +1,5 @@
+import { storeBackend } from "@/lib/store";
+
 function trim(value: string | undefined): string {
   return value?.trim() ?? "";
 }
@@ -70,7 +72,7 @@ export function getConfig() {
       ? `${publicUrl}/api/cursor/status`
       : undefined,
     vercel: Boolean(process.env.VERCEL),
-    storeBackend: process.env.KV_REST_API_URL ? "vercel-kv" : "local-file",
+    storeBackend: storeBackend(),
   };
 }
 
