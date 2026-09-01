@@ -12,6 +12,8 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
+import type { Job } from "@/lib/types";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

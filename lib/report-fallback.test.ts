@@ -8,10 +8,13 @@ import {
 import type { Job } from "./types";
 
 function job(overrides: Partial<Job> & Pick<Job, "id" | "prompt">): Job {
+  const now = new Date().toISOString();
   return {
     source: "slack",
     status: "replied",
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    events: [],
     ...overrides,
   };
 }
