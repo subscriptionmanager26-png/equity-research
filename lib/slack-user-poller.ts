@@ -1,4 +1,3 @@
-import { continueAfterResponse } from "@/lib/after-response";
 import { getConfig } from "@/lib/config";
 import { handleSlackEvent, isRelaySlackOutbound, isSlackThreadReply } from "@/lib/handle-slack";
 import {
@@ -24,8 +23,7 @@ declare global {
 }
 
 const POLL_MS = 3000;
-const MIN_POLL_GAP_MS = 8_000;
-const SCAN_EVERY_MS = 8_000;
+const MIN_POLL_GAP_MS = 30_000;
 
 export async function startSlackUserPoller() {
   if (globalThis.__relaySlackUserPoller?.started) return;
@@ -66,29 +64,12 @@ export async function pollSlackOnce(options?: { force?: boolean }) {
   return { ok: true, actor: actor.name ?? actor.userId };
 }
 
-/** Start / continue the user-token mention scan (no bot invite required). */
+/** Opportunistic scan from Telegram/Slack webhooks — never self-reschedule. */
 export async function kickSlackMentionScan() {
   const cfg = getConfig();
   if (!cfg.slackUserPollConfigured) return;
-  const origin = cfg.publicUrl;
-  if (!origin) {
-    await pollSlackOnce().catch((error) => {
-      console.error("[relay] Slack mention scan failed", error);
-    });
-    return;
-  }
-  const secret = process.env.CRON_SECRET?.trim();
-  await fetch(`${origin}/api/slack/poll`, {
-    headers: secret ? { Authorization: `Bearer ${secret}` } : undefined,
-    cache: "no-store",
-    signal: AbortSignal.timeout(4_000),
-  }).catch(() => undefined);
-}
-
-export function scheduleNextSlackMentionScan() {
-  continueAfterResponse(async () => {
-    await sleep(SCAN_EVERY_MS);
-    await kickSlackMentionScan();
+  await pollSlackOnce().catch((error) => {
+    console.error("[relay] Slack mention scan failed", error);
   });
 }
 
@@ -199,7 +180,9 @@ async function pollSearchTriggers(actorUserId: string) {
 
 /** Only threads Relay already started — catches follow-ups without pocketedge. */
 async function pollTrackedThreads(actorUserId: string) {
-  const threads = await listSlackThreads();
+  const threads = (await listSlackThreads())
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, 8);
   for (const thread of threads) {
     const key = `thread:${thread.channelId}:${thread.threadTs}`;
     const cursor =

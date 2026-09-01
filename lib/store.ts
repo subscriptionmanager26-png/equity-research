@@ -65,33 +65,63 @@ function normalizeStore(parsed: StoreData): StoreData {
     slackSearchCursor: parsed.slackSearchCursor,
     slackPollCursors: parsed.slackPollCursors ?? {},
     processedSlackMessages: parsed.processedSlackMessages ?? [],
+    slackLastPollAt: parsed.slackLastPollAt,
     telegramOffset: parsed.telegramOffset,
   };
 }
 
+let lastGoodStore: StoreData | undefined;
+let blobReadFailed = false;
+
 async function readStoreFromBlob(): Promise<StoreData> {
   const { get } = await import("@vercel/blob");
-  const result = await get(BLOB_PATH, {
-    access: "private",
-    useCache: false,
-  });
-  if (!result || result.statusCode !== 200 || !result.stream) {
-    return emptyStore();
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const result = await get(BLOB_PATH, {
+        access: "private",
+        useCache: false,
+      });
+      if (!result || result.statusCode !== 200 || !result.stream) {
+        blobReadFailed = false;
+        return lastGoodStore ?? emptyStore();
+      }
+      const raw = await new Response(result.stream).text();
+      if (!raw.trim()) {
+        blobReadFailed = false;
+        return lastGoodStore ?? emptyStore();
+      }
+      const store = normalizeStore(JSON.parse(raw) as StoreData);
+      lastGoodStore = store;
+      blobReadFailed = false;
+      return store;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    }
   }
-  const raw = await new Response(result.stream).text();
-  if (!raw.trim()) return emptyStore();
-  return normalizeStore(JSON.parse(raw) as StoreData);
+  blobReadFailed = true;
+  if (lastGoodStore) {
+    console.error("[relay] Blob read failed; using last good store", lastError);
+    return lastGoodStore;
+  }
+  throw lastError;
 }
 
 async function writeStoreToBlob(data: StoreData): Promise<void> {
+  if (blobReadFailed) {
+    console.error("[relay] Skipping blob write after a failed read");
+    return;
+  }
   const { put } = await import("@vercel/blob");
   await put(BLOB_PATH, JSON.stringify(data), {
     access: "private",
     allowOverwrite: true,
     addRandomSuffix: false,
     contentType: "application/json",
-    cacheControlMaxAge: 60,
+    cacheControlMaxAge: 0,
   });
+  lastGoodStore = data;
 }
 
 async function readStoreFromKv(): Promise<StoreData> {

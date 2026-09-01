@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { pollSlackOnce, scheduleNextSlackMentionScan } from "@/lib/slack-user-poller";
+import { pollSlackOnce } from "@/lib/slack-user-poller";
 import { timingSafeEqual } from "@/lib/relay";
 
 export const maxDuration = 60;
@@ -12,14 +12,11 @@ function authorized(request: Request) {
   return timingSafeEqual(header, `Bearer ${secret}`);
 }
 
-/** Search Slack (user token) for @pocketedge in any channel you can read. */
+/** Search Slack (user token) for @pocketedge. Do not chain-call this endpoint. */
 export async function GET(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const result = await pollSlackOnce();
-  if (!("skipped" in result && result.skipped)) {
-    scheduleNextSlackMentionScan();
-  }
   return NextResponse.json(result);
 }
