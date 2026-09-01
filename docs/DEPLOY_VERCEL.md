@@ -8,7 +8,7 @@ Vercel gives you a **stable HTTPS URL** for Cursor status webhooks — no localt
 |-----------|-----------|--------|
 | Telegram | Long-poll (`getUpdates`) | Webhook → `/api/telegram/webhook` |
 | Cursor status | `/api/cursor/status` | Same (auto `PUBLIC_URL` from `VERCEL_URL`) |
-| Cursor backup poll | In-process waiter | Vercel Cron → `/api/cursor/poll` every minute |
+| Cursor backup poll | In-process waiter | Manual `GET /api/cursor/poll` (Hobby forbids more than one cron per day; status webhook is the live path) |
 | Job store | `.data/store.json` | **Vercel KV** (required) |
 | Slack user poller | Local only | Use Slack Events API → `/api/slack/events` |
 
