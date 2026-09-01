@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 import { WebClient } from "@slack/web-api";
 
+import { markdownToSlackMrkdwn } from "@/lib/chat-markup";
 import { getConfig } from "@/lib/config";
 import { markSlackMessageProcessed } from "@/lib/jobs";
 import { updateStore } from "@/lib/store";
@@ -152,7 +153,7 @@ export async function sendSlackMessage(input: {
   text: string;
   threadTs?: string;
 }) {
-  const chunks = splitSlackText(input.text);
+  const chunks = splitSlackText(markdownToSlackMrkdwn(input.text) || input.text);
   let lastTs: string | undefined;
   for (const chunk of chunks) {
     const thread = input.threadTs ? { thread_ts: input.threadTs } : {};

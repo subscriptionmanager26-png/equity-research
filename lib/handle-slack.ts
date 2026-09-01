@@ -44,6 +44,7 @@ export function classifySlackEvent(input: {
   text?: string;
   ts: string;
   thread_ts?: string;
+  channelId?: string;
   trackedThread: boolean;
   relayOutbound?: boolean;
 }) {
@@ -51,9 +52,16 @@ export function classifySlackEvent(input: {
   if (input.type !== "app_mention" && input.type !== "message") {
     return "ignore" as const;
   }
-  if (isSlackThreadReply(input) && input.trackedThread) return "follow_up" as const;
-  if (input.type === "app_mention") return "mention" as const;
-  if (messageTriggersRelay(input.text ?? "")) return "mention" as const;
+  const addressed =
+    input.type === "app_mention" || messageTriggersRelay(input.text ?? "");
+  const inDm = Boolean(input.channelId?.startsWith("D"));
+  if (isSlackThreadReply(input) && input.trackedThread) {
+    if (addressed) return "follow_up" as const;
+    // DMs with you are a private thread; channels are shared — don't hijack chatter.
+    if (inDm) return "follow_up" as const;
+    return "ignore" as const;
+  }
+  if (addressed) return "mention" as const;
   return "ignore" as const;
 }
 
@@ -90,6 +98,7 @@ export async function handleSlackEvent(event: SlackInboundEvent) {
     text: event.text,
     ts: event.ts,
     thread_ts: event.thread_ts,
+    channelId: event.channel,
     trackedThread: Boolean(tracked),
     relayOutbound: false,
   });

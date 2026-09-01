@@ -10,7 +10,7 @@ Relay answers Slack **as you** with `SLACK_USER_TOKEN`. It **searches** any chan
 
 Relay scans Slack about every 8 seconds (user-token search) and whenever the dashboard, Telegram, or `/api/slack/poll` runs. A daily cron restarts the scan if it went idle.
 
-Say `@pocketedge …` in any channel you can read. Replies **in that same thread** are follow-ups (no mention needed). A new top-level message still needs `@pocketedge`.
+Say `@pocketedge …` in any channel you can read. In **channels**, only messages that mention `@pocketedge` start a job or a follow-up — ordinary channel or thread chatter is left alone. In **DMs with you**, a thread reply is still a follow-up without the mention.
 
 Telegram and Slack stay separate. A Slack question is answered in that Slack thread only.
 
@@ -30,7 +30,7 @@ Relay uses your **user token** (`xoxp-…`) to:
 
 1. **Search** Slack for messages containing `pocketedge` in any channel you can already read
 2. **Reply in-thread as you** (`chat.postMessage` with your user token)
-3. **Follow thread replies** without saying `pocketedge` again
+3. **Follow-ups:** in DMs, thread replies continue the agent; in channels, say `@pocketedge` again so group chat is not treated as a question
 
 No app named "Pocketedge" is required. `pocketedge` is just a trigger word.
 
@@ -101,11 +101,13 @@ In any channel you already belong to:
 
 Relay acks in that thread and posts the Cursor answer **as your Slack account** when the run finishes.
 
-Thread follow-up (no `pocketedge` needed):
+Thread follow-up in a **channel** (must mention `@pocketedge`):
 
 ```
-Can you also add risks?
+@pocketedge also add risks
 ```
+
+In a **DM**, a normal thread reply is enough.
 
 ---
 
@@ -123,6 +125,6 @@ Telegram and Slack stay fully separate — answers never cross platforms.
 
 - Someone DMs you: `@pocketedge summarize this` → Relay triggers and replies in that DM **as you**
 - You start a DM: send `@pocketedge …` to a coworker (or yourself) → Relay triggers on your message too
-- Thread replies in a DM work the same as channels (follow-ups without `pocketedge`)
+- Thread replies in a DM continue the agent without `@pocketedge`. In a channel, mention `@pocketedge` again.
 
 Make sure the user token has `im:history`, `im:read`, and `search:read`. No bot invite is needed for DMs you are already in.

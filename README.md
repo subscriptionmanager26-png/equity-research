@@ -52,7 +52,7 @@ On **Vercel production**, Relay uses your **user token** (`SLACK_USER_TOKEN`) an
 @pocketedge analyze SBIN
 ```
 
-Thread replies are follow-ups. Full steps: [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
+In a channel, mention `@pocketedge` again to follow up. In a DM, a thread reply is enough. Full steps: [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
 
 Slack and Telegram stay fully separate — answers never cross platforms.
 

@@ -1,4 +1,5 @@
 import { getConfig } from "@/lib/config";
+import { markdownToTelegramHtml } from "@/lib/chat-markup";
 import { updateStore } from "@/lib/store";
 import type { JobFile } from "@/lib/types";
 
@@ -134,18 +135,28 @@ export async function sendTelegramMessage(input: {
   const chunks = splitTelegramText(input.text);
   let lastId: number | undefined;
   for (const chunk of chunks) {
-    const withMarkdown = await telegramCall<{ message_id: number }>(
+    const html = markdownToTelegramHtml(chunk);
+    const withHtml = await telegramCall<{ message_id: number }>(
       "sendMessage",
       {
         chat_id: input.chatId,
-        text: chunk,
+        text: html,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
         reply_to_message_id: lastId ? undefined : input.replyToMessageId,
       },
     );
-    if (!withMarkdown.ok) {
-      throw new Error(withMarkdown.description ?? "Telegram sendMessage failed");
+    const sent = withHtml.ok
+      ? withHtml
+      : await telegramCall<{ message_id: number }>("sendMessage", {
+          chat_id: input.chatId,
+          text: chunk,
+          reply_to_message_id: lastId ? undefined : input.replyToMessageId,
+        });
+    if (!sent.ok) {
+      throw new Error(sent.description ?? "Telegram sendMessage failed");
     }
-    lastId = withMarkdown.result?.message_id;
+    lastId = sent.result?.message_id;
   }
   return lastId;
 }

@@ -335,9 +335,12 @@ async function processMessage(event: SlackInboundEvent, actorUserId: string) {
   if (shouldIgnoreSlackSubtype(event.subtype)) return;
 
   const ownMessage = event.user === actorUserId;
-  if (ownMessage && !messageTriggersRelay(event.text ?? "")) {
+  const addressed =
+    messageTriggersRelay(event.text ?? "") || event.type === "app_mention";
+  if (ownMessage && !addressed) {
     const threadTs = isSlackThreadReply(event) ? event.thread_ts : undefined;
-    if (!threadTs) return;
+    const inDm = event.channel.startsWith("D");
+    if (!threadTs || !inDm) return;
     const tracked = await getSlackThread(event.channel, threadTs);
     if (!tracked) return;
   }
