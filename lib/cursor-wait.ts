@@ -11,9 +11,9 @@ import {
   mentionedArtifactsMissing,
 } from "@/lib/artifact-collect";
 import {
-  expectsReportFile,
-  findRecentReportFallback,
+  findThreadReportResendFallback,
 } from "@/lib/report-fallback";
+import { reportFilenameFor } from "@/lib/report-filename";
 import { addJobEvent, getJob, listJobs } from "@/lib/jobs";
 import { deliverReply, deliveryDetail } from "@/lib/relay";
 
@@ -98,19 +98,13 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
             ? `Cursor agent ended with ${agent.status}. ${link}`
             : `Cursor finished but did not leave a text answer. ${link}`);
 
-      if (
-        !failed &&
-        files.length === 0 &&
-        expectsReportFile(job?.prompt ?? "", message) &&
-        message.length < 500
-      ) {
-        const allJobs = await listJobs();
-        const fallback = findRecentReportFallback(job, allJobs);
-        if (fallback) {
+      if (!failed && files.length === 0 && message.length < 500) {
+        const resend = findThreadReportResendFallback(job, await listJobs());
+        if (resend) {
           console.info(
-            `[relay] Using prior job report body for ${jobId} (${fallback.length} chars)`,
+            `[relay] Resending prior thread report for ${jobId} (${resend.length} chars)`,
           );
-          message = fallback;
+          message = resend;
         }
       }
 
@@ -119,12 +113,17 @@ async function settleJob(jobId: string, agentId: string, startedAt: number) {
         message += `\n\n_Note: Cursor did not publish ${missingArtifacts.join(", ")} to the artifacts API. Relay attached the report from the agent text instead._`;
       }
 
+      const reportFilename = job
+        ? reportFilenameFor(job, message, files)
+        : "report.md";
+
       const delivery = await deliverReply({
         jobId,
         job,
         status: failed ? "error" : "finished",
         message,
         files,
+        reportFilename,
       });
       await addJobEvent(
         jobId,

@@ -353,9 +353,10 @@ export function Dashboard() {
                   . Point the Cursor automation at{" "}
                   <strong className="font-medium text-zinc-300">this
                   repository</strong>
-                  , paste the prompt above, and Save. Reports go to{" "}
+                  , paste the prompt above, and Save. Reports go to topic-specific
+                  files like{" "}
                   <code className="font-mono text-[11px] text-sky-200">
-                    artifacts/report.md
+                    artifacts/itc-equity-report.md
                   </code>{" "}
                   plus a short chat summary — no PDF unless asked.
                 </p>

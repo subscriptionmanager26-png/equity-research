@@ -4,6 +4,6 @@ This skill is installed as a **project skill** so Cursor Cloud Agents (Telegram/
 
 When running inside Relay:
 
-- User-facing deliverable: `artifacts/report.md` (markdown only).
+- User-facing deliverable: `artifacts/<topic>-report.md` (markdown only; never a generic `report.md`).
 - Chat reply: 1–2 sentence summary.
 - PDF (`templates/build_pdf.py`) only if the user explicitly asks for a PDF.

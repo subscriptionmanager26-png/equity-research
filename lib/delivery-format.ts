@@ -16,6 +16,8 @@ export type FormattedDelivery = {
 export type FormatReplyOptions = {
   /** User explicitly asked for a PDF in the original prompt. */
   allowPdf?: boolean;
+  /** Filename for synthesized markdown (default report.md). */
+  reportFilename?: string;
 };
 
 /** Quick answers at or below this length stay as plain chat text. */
@@ -100,7 +102,7 @@ export function formatReplyForDelivery(
 ): FormattedDelivery {
   const allowPdf = options.allowPdf ?? false;
   const trimmed = message.trim();
-  let files = filterFiles([...existingFiles], allowPdf);
+  const files = filterFiles([...existingFiles], allowPdf);
 
   const hasMd = hasTextArtifact(files);
   const isLong = trimmed.length > INLINE_ANSWER_MAX_CHARS;
@@ -116,8 +118,9 @@ export function formatReplyForDelivery(
 
   let usedMarkdownFile = false;
   if (!hasMd && isLong) {
+    const name = options.reportFilename ?? "report.md";
     files.unshift({
-      name: "report.md",
+      name,
       bytes: new TextEncoder().encode(trimmed),
       mime: "text/markdown",
     });
@@ -135,9 +138,11 @@ export function formatReplyForJob(
   message: string,
   files: DeliveryFile[],
   jobPrompt?: string,
+  reportFilename?: string,
 ) {
   return formatReplyForDelivery(message, files, {
     allowPdf: userRequestedPdf(jobPrompt ?? ""),
+    reportFilename,
   });
 }
 

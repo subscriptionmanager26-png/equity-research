@@ -8,7 +8,7 @@ This repo includes the financial-analysis skill at .cursor/skills/research/finan
 - Do not improvise a different report framework.
 
 Delivery:
-1. Write the FULL report only in artifacts/report.md. Do not paste the full report in your final chat message.
+1. Write the FULL report only in artifacts/<topic>-report.md (e.g. artifacts/itc-equity-report.md). Do not use a generic artifacts/report.md.
 2. Your final chat message must be a 1–2 sentence summary only (recommendation + key takeaway).
 3. Do NOT create PDF files unless the user explicitly asks for a PDF.
 

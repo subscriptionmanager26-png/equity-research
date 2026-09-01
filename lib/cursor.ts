@@ -19,7 +19,7 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
   const fileLine = hasFiles
     ? " Download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload."
     : "";
-  const artifactLine = ` For stocks, companies, ETFs, or any financial instrument, follow .cursor/skills/research/financial-analysis/SKILL.md. Put the FULL report only in artifacts/report.md. Final chat message: 1–2 sentence summary. Do NOT create PDF unless the user explicitly asks for PDF.`;
+  const artifactLine = ` For stocks, companies, ETFs, or any financial instrument, follow .cursor/skills/research/financial-analysis/SKILL.md. Put the FULL report only in artifacts/<topic>-report.md (e.g. artifacts/itc-equity-report.md). Do not use a generic artifacts/report.md. Final chat message: 1–2 sentence summary. Do NOT create PDF unless the user explicitly asks for PDF.`;
   const noPostLine = ` Do not POST to ${channel}, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or ${channel}.`;
   return `Answer the user's text.${fileLine}${artifactLine}${noPostLine}`;
 }

@@ -15,7 +15,7 @@ Load its `references/` as needed (India sources, thesis/memo template, data-pull
 
 Cloud agents in this repo answer Telegram/Slack via Relay:
 
-1. Put the **full** analysis only in `artifacts/report.md`.
+1. Put the **full** analysis only in `artifacts/<topic>-report.md` (e.g. `artifacts/itc-equity-report.md`). Do not use a generic `artifacts/report.md`.
 2. Your **final chat message** is a **1–2 sentence summary** (recommendation + one key takeaway). Never paste the full report in chat.
 3. **Do not create PDFs** unless the user explicitly asks for a PDF. Skip `templates/build_pdf.py` by default.
-4. Persist working notes under `~/research/<TICKER>/` as the skill describes; the user-facing file is still `artifacts/report.md`.
+4. Persist working notes under `~/research/<TICKER>/` as the skill describes; the user-facing artifact is still the topic-specific markdown file under `artifacts/`.
