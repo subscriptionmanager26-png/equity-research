@@ -282,13 +282,32 @@ function resolveDeliveryChatId(input: {
 
 function cursorErrorDetail(status: number, body: unknown) {
   if (body && typeof body === "object") {
-    const record = body as { error?: unknown; message?: unknown };
+    const record = body as {
+      error?: unknown;
+      message?: unknown;
+      details?: unknown;
+    };
     if (typeof record.error === "string" && record.error.trim()) {
-      return record.error.trim();
+      const extras = Array.isArray(record.details)
+        ? record.details
+            .map((item) => {
+              if (item && typeof item === "object" && "message" in item) {
+                const message = (item as { message?: unknown }).message;
+                return typeof message === "string" ? message : "";
+              }
+              return "";
+            })
+            .filter(Boolean)
+        : [];
+      return extras.length
+        ? `${record.error.trim()} (${extras.join("; ")})`
+        : record.error.trim();
     }
-    if (record.error && typeof record.error === "object" && "message" in record.error) {
-      const nested = (record.error as { message?: unknown }).message;
-      if (typeof nested === "string" && nested.trim()) return nested.trim();
+    if (record.error && typeof record.error === "object") {
+      const nested = record.error as { message?: unknown; code?: unknown };
+      if (typeof nested.message === "string" && nested.message.trim()) {
+        return nested.message.trim();
+      }
     }
     if (typeof record.message === "string" && record.message.trim()) {
       return record.message.trim();

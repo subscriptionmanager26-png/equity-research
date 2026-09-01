@@ -100,7 +100,6 @@ export async function buildCloudAgentBody(job: Job) {
     prompt: { text: buildCloudAgentPrompt(job, files) },
     source: { repository, ref },
     target: { autoCreatePr: false },
-    name: `Relay ${job.id.slice(0, 18)}`.slice(0, 100),
   };
   if (cfg.cursorStatusWebhookUrl && cfg.cursorStatusWebhookSecret) {
     body.webhook = {
