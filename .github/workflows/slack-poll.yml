@@ -13,5 +13,5 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -fsS -H "Authorization: Bearer ${CRON_SECRET}" \
+          curl -fsS --max-time 50 -H "Authorization: Bearer ${CRON_SECRET}" \
             "https://equity-research-ivory.vercel.app/api/slack/poll"

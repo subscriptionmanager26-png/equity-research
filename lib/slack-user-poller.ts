@@ -28,7 +28,15 @@ declare global {
 const POLL_MS = 3000;
 const MIN_POLL_GAP_MS = 45_000;
 const CHAIN_INTERVAL_MS = 56_000;
+/** Hobby maxDuration is 60s; a 56s sleep inside waitUntil 504s the request. */
+const MAX_CHAIN_SLEEP_MS = 12_000;
+const MAX_NEW_MESSAGES_PER_VERCEL_POLL = 3;
 const STALE_CHAIN_MS = 90_000;
+
+type SlackPollCtx = {
+  processed: Set<string>;
+  remainingNew: number;
+};
 
 export async function startSlackUserPoller() {
   if (globalThis.__relaySlackUserPoller?.started) return;
@@ -76,10 +84,14 @@ export async function pollSlackOnce(options?: {
   }
   const actor = await getSlackBotIdentity();
   const jobIds: string[] = [];
+  const ctx: SlackPollCtx = {
+    processed: new Set((await getStore()).processedSlackMessages ?? []),
+    remainingNew: MAX_NEW_MESSAGES_PER_VERCEL_POLL,
+  };
   await hydrateSlackThreadsFromJobs();
-  await runPollStep("search", () => pollSearchTriggers(actor.userId, jobIds));
-  await runPollStep("threads", () => pollTrackedThreads(actor.userId, jobIds));
-  await runPollStep("channels", () => pollConfiguredChannels(actor.userId, jobIds));
+  await runPollStep("search", () => pollSearchTriggers(actor.userId, jobIds, ctx));
+  await runPollStep("threads", () => pollTrackedThreads(actor.userId, jobIds, ctx));
+  await runPollStep("channels", () => pollConfiguredChannels(actor.userId, jobIds, ctx));
   return { ok: true, actor: actor.name ?? actor.userId, jobIds };
 }
 
@@ -88,7 +100,7 @@ export async function maybeStartSlackPollChain() {
   if (!cfg.vercel || !cfg.slackUserPollConfigured || !cfg.publicUrl) return;
   const last = Date.parse((await getStore()).slackLastPollAt ?? "") || 0;
   if (Date.now() - last < STALE_CHAIN_MS) return;
-  await triggerSlackPollRequest();
+  await triggerSlackPollRequest({ waitForComplete: false });
 }
 
 export async function scheduleNextSlackPoll(startedAt = Date.now()) {
@@ -97,7 +109,10 @@ export async function scheduleNextSlackPoll(startedAt = Date.now()) {
   if (!(await acquireSlackPollChainSlot(52))) {
     return;
   }
-  const wait = Math.max(8_000, CHAIN_INTERVAL_MS - (Date.now() - startedAt));
+  const wait = Math.min(
+    MAX_CHAIN_SLEEP_MS,
+    Math.max(3_000, CHAIN_INTERVAL_MS - (Date.now() - startedAt)),
+  );
   await sleep(wait);
   // Do not wait for the next poll's after() work — that would nest
   // 56s sleeps and freeze this function until maxDuration.
@@ -194,7 +209,11 @@ async function pollDirectMessages(actorUserId: string, jobIds: string[]) {
 }
 
 /** Workspace search — finds pocketedge in any channel you can already read. */
-async function pollSearchTriggers(actorUserId: string, jobIds: string[]) {
+async function pollSearchTriggers(
+  actorUserId: string,
+  jobIds: string[],
+  ctx?: SlackPollCtx,
+) {
   const cfg = getConfig();
   const client = getSlackClient();
 
@@ -210,7 +229,7 @@ async function pollSearchTriggers(actorUserId: string, jobIds: string[]) {
     });
     if (!result.ok || !result.messages?.matches?.length) return;
 
-    const ordered = [...result.messages.matches].reverse();
+    const ordered = result.messages.matches;
 
     for (const match of ordered) {
       if (!match.ts || !match.user || !match.channel?.id) continue;
@@ -232,6 +251,7 @@ async function pollSearchTriggers(actorUserId: string, jobIds: string[]) {
         },
         actorUserId,
         jobIds,
+        ctx,
       );
     }
   } catch (error) {
@@ -245,7 +265,11 @@ async function pollSearchTriggers(actorUserId: string, jobIds: string[]) {
 }
 
 /** Only threads Relay already started — catches follow-ups without pocketedge. */
-async function pollTrackedThreads(actorUserId: string, jobIds: string[]) {
+async function pollTrackedThreads(
+  actorUserId: string,
+  jobIds: string[],
+  ctx?: SlackPollCtx,
+) {
   const threads = (await listSlackThreads())
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
     .slice(0, 8);
@@ -298,6 +322,7 @@ async function pollTrackedThreads(actorUserId: string, jobIds: string[]) {
           },
           actorUserId,
           jobIds,
+          ctx,
         );
       }
 
@@ -316,11 +341,15 @@ async function pollTrackedThreads(actorUserId: string, jobIds: string[]) {
 }
 
 /** Optional explicit channel list when search is unavailable. */
-async function pollConfiguredChannels(actorUserId: string, jobIds: string[]) {
+async function pollConfiguredChannels(
+  actorUserId: string,
+  jobIds: string[],
+  ctx?: SlackPollCtx,
+) {
   const cfg = getConfig();
   if (!cfg.slackChannelIds.length) return;
   for (const channelId of cfg.slackChannelIds) {
-    await pollChannel(channelId, actorUserId, jobIds);
+    await pollChannel(channelId, actorUserId, jobIds, ctx);
   }
 }
 
@@ -328,6 +357,7 @@ async function pollChannel(
   channelId: string,
   actorUserId: string,
   jobIds: string[] = [],
+  ctx?: SlackPollCtx,
 ) {
   const cursor = (await getSlackPollCursor(channelId)) ?? `${Date.now() / 1000 - 3600}`;
   const client = getSlackClient();
@@ -376,7 +406,7 @@ async function pollChannel(
     if (messageTriggersRelay(message.text ?? "")) {
       event.type = "app_mention";
     }
-    await processMessage(event, actorUserId, jobIds);
+    await processMessage(event, actorUserId, jobIds, ctx);
   }
 
   if (Number(newestTs) > Number(cursor)) {
@@ -388,7 +418,12 @@ async function processMessage(
   event: SlackInboundEvent,
   actorUserId: string,
   jobIds: string[] = [],
+  ctx?: SlackPollCtx,
 ) {
+  const messageKey = `${event.channel}:${event.ts}`;
+  if (ctx?.processed.has(messageKey)) return;
+  if (ctx && ctx.remainingNew <= 0) return;
+
   if (isRelaySlackOutbound(event)) return;
   if (shouldIgnoreSlackSubtype(event.subtype)) return;
 
@@ -403,6 +438,11 @@ async function processMessage(
     if (!tracked) return;
   }
   if (!ownMessage && isSlackBotMessage(event, actorUserId)) return;
+
+  if (ctx) {
+    ctx.processed.add(messageKey);
+    ctx.remainingNew -= 1;
+  }
 
   console.info(
     `[relay] Slack ${isSlackThreadReply(event) ? "thread reply" : "trigger"} in ${event.channel}: ${(event.text ?? "").slice(0, 80)}`,

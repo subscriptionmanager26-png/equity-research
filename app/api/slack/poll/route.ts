@@ -24,22 +24,15 @@ export async function GET(request: Request) {
   }
   const startedAt = Date.now();
   const slack = await pollSlackOnce();
-  const cursor = await pollDispatchedJobs().catch((error) => {
-    console.error("[relay] Cursor poll during Slack scan failed", error);
-    return { settled: 0 };
-  });
 
   continueAfterResponse(async () => {
+    await pollDispatchedJobs().catch((error) => {
+      console.error("[relay] Cursor poll during Slack scan failed", error);
+    });
     await scheduleNextSlackPoll(startedAt).catch((error) => {
       console.error("[relay] Slack poll chain failed", error);
     });
   });
 
-  return NextResponse.json({
-    ...slack,
-    cursorSettled:
-      cursor && typeof cursor === "object" && "settled" in cursor
-        ? cursor.settled
-        : undefined,
-  });
+  return NextResponse.json(slack);
 }
