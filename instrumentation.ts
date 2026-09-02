@@ -9,7 +9,13 @@ export async function register() {
     await ensureTelegramWebhook().catch((error) => {
       console.error("[relay] Telegram webhook registration failed", error);
     });
-    console.info("[relay] Vercel mode: Telegram webhook + Cursor status webhook (no local pollers)");
+    console.info(
+      "[relay] Vercel mode: Telegram webhook + Cursor status webhook + minute Slack scan",
+    );
+    const { maybeStartSlackPollChain } = await import("./lib/slack-user-poller");
+    void maybeStartSlackPollChain().catch((error) => {
+      console.error("[relay] Slack poll chain start failed", error);
+    });
     return;
   }
 

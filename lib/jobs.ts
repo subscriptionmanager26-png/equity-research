@@ -218,6 +218,21 @@ export async function listChats(): Promise<TelegramChat[]> {
   return data.chats;
 }
 
+export async function rememberSlackThreadsFromJobs() {
+  const now = new Date().toISOString();
+  await updateStore((data) => {
+    for (const job of [...data.jobs].reverse()) {
+      if (!job.slackChannelId || !job.slackThreadTs) continue;
+      rememberSlackThreadInStore(data, {
+        channelId: job.slackChannelId,
+        threadTs: job.slackThreadTs,
+        lastJobId: job.id,
+        updatedAt: now,
+      });
+    }
+  });
+}
+
 export async function rememberSlackThread(input: {
   channelId: string;
   threadTs: string;

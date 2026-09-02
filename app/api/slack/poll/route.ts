@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { pollSlackOnce } from "@/lib/slack-user-poller";
+import { continueAfterResponse } from "@/lib/after-response";
+import { pollDispatchedJobs } from "@/lib/cursor-poll";
 import { timingSafeEqual } from "@/lib/relay";
+import {
+  pollSlackOnce,
+  scheduleNextSlackPoll,
+} from "@/lib/slack-user-poller";
 
 export const maxDuration = 60;
 
@@ -12,11 +17,29 @@ function authorized(request: Request) {
   return timingSafeEqual(header, `Bearer ${secret}`);
 }
 
-/** Search Slack (user token) for @pocketedge. Do not chain-call this endpoint. */
+/** Search Slack for @pocketedge about once a minute (self-chain on Vercel). */
 export async function GET(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const result = await pollSlackOnce();
-  return NextResponse.json(result);
+  const startedAt = Date.now();
+  const slack = await pollSlackOnce();
+  const cursor = await pollDispatchedJobs().catch((error) => {
+    console.error("[relay] Cursor poll during Slack scan failed", error);
+    return { settled: 0 };
+  });
+
+  continueAfterResponse(async () => {
+    await scheduleNextSlackPoll(startedAt).catch((error) => {
+      console.error("[relay] Slack poll chain failed", error);
+    });
+  });
+
+  return NextResponse.json({
+    ...slack,
+    cursorSettled:
+      cursor && typeof cursor === "object" && "settled" in cursor
+        ? cursor.settled
+        : undefined,
+  });
 }

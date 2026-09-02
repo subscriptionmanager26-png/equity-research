@@ -104,6 +104,7 @@ export type StoreData = {
   slackPollCursors?: Record<string, string>;
   processedSlackMessages?: string[];
   slackLastPollAt?: string;
+  slackPollNextScheduledAt?: string;
   telegramOffset?: number;
 };
 

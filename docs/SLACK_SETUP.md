@@ -8,7 +8,7 @@ Relay answers Slack **as you** with `SLACK_USER_TOKEN`. It **searches** any chan
 2. Set on Vercel Production: `SLACK_USER_TOKEN`, `SLACK_TRIGGER_WORD=pocketedge`, `CRON_SECRET`.
 3. Optional: `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` if you still want Events API as a backup. Not required for channel pickup.
 
-Relay scans Slack about every 8 seconds (user-token search) and whenever the dashboard, Telegram, or `/api/slack/poll` runs. A daily cron restarts the scan if it went idle.
+Relay scans Slack about **once a minute** via `/api/slack/poll` (a self-chain on Vercel, because Hobby cron cannot run more than once per day). Telegram/Slack webhooks still kick an extra scan. A daily Vercel cron restarts the chain if it went idle. Search looks back two days, so a missed `@pocketedge` is picked up on the next scan instead of being skipped by a stale cursor.
 
 Say `@pocketedge …` in any channel you can read. In **channels**, only messages that mention `@pocketedge` start a job or a follow-up — ordinary channel or thread chatter is left alone. In **DMs with you**, a thread reply is still a follow-up without the mention.
 

@@ -12,7 +12,7 @@ Vercel gives you a **stable HTTPS URL** for Cursor status webhooks — no localt
 | Job store | `.data/store.json` | **Upstash Redis** (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) |
 
 ## Steps
-| Slack user poller | Local only | Use Slack Events API → `/api/slack/events` |
+| Slack mention scan | Local 3s poller | `/api/slack/poll` once a minute (self-chain + daily cron restart). Hobby cannot schedule Vercel cron more than daily. |
 
 ## Steps
 

@@ -105,8 +105,31 @@ function normalizeStore(parsed: StoreData): StoreData {
     slackPollCursors: parsed.slackPollCursors ?? {},
     processedSlackMessages: parsed.processedSlackMessages ?? [],
     slackLastPollAt: parsed.slackLastPollAt,
+    slackPollNextScheduledAt: parsed.slackPollNextScheduledAt,
     telegramOffset: parsed.telegramOffset,
   };
+}
+
+const SLACK_POLL_CHAIN_KEY = "relay:slack-poll-chain";
+
+/** One-at-a-time slot so Vercel minute scans cannot fork into parallel loops. */
+export async function acquireSlackPollChainSlot(ttlSeconds = 52): Promise<boolean> {
+  if (kvEnabled()) {
+    const redis = await getRedis();
+    const ok = await redis.set(SLACK_POLL_CHAIN_KEY, "1", {
+      nx: true,
+      ex: ttlSeconds,
+    });
+    return ok === "OK" || ok === true;
+  }
+  return updateStore((data) => {
+    const until = Date.parse(data.slackPollNextScheduledAt ?? "") || 0;
+    if (until > Date.now()) return false;
+    data.slackPollNextScheduledAt = new Date(
+      Date.now() + ttlSeconds * 1000,
+    ).toISOString();
+    return true;
+  });
 }
 
 let lastGoodStore: StoreData | undefined;
