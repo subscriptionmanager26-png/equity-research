@@ -235,7 +235,7 @@ async function pollSearchTriggers(
       if (!match.ts || !match.user || !match.channel?.id) continue;
       if (!slackTsInLookback(match.ts)) continue;
       const text = match.text ?? "";
-      if (match.user === actorUserId && !messageTriggersRelay(text)) continue;
+      if (!messageTriggersRelay(text)) continue;
 
       await processMessage(
         {

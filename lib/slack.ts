@@ -49,7 +49,8 @@ export function messageTriggersRelay(text: string) {
   }
   const stripped = stripSlackMentions(body);
   const word = cfg.slackTriggerWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`@?${word}\\b`, "i").test(stripped);
+  const head = stripped.slice(0, 80);
+  return new RegExp(`^[^\\n]{0,40}@?${word}\\b`, "i").test(head);
 }
 
 export async function getSlackBotIdentity() {

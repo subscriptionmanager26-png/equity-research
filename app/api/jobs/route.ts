@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { listJobs } from "@/lib/jobs";
+import { maybeStartSlackPollChain } from "@/lib/slack-user-poller";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  void maybeStartSlackPollChain().catch((error) => {
+    console.error("[relay] Slack poll chain start from jobs failed", error);
+  });
   try {
     const jobs = await listJobs();
     return NextResponse.json({ jobs });

@@ -26,11 +26,11 @@ export async function GET(request: Request) {
   const slack = await pollSlackOnce();
 
   continueAfterResponse(async () => {
-    await pollDispatchedJobs().catch((error) => {
-      console.error("[relay] Cursor poll during Slack scan failed", error);
-    });
     await scheduleNextSlackPoll(startedAt).catch((error) => {
       console.error("[relay] Slack poll chain failed", error);
+    });
+    await pollDispatchedJobs({ maxMs: 20_000 }).catch((error) => {
+      console.error("[relay] Cursor poll during Slack scan failed", error);
     });
   });
 
