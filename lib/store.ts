@@ -120,7 +120,7 @@ export async function acquireSlackPollChainSlot(ttlSeconds = 52): Promise<boolea
       nx: true,
       ex: ttlSeconds,
     });
-    return ok === "OK" || ok === true;
+    return ok === "OK";
   }
   return updateStore((data) => {
     const until = Date.parse(data.slackPollNextScheduledAt ?? "") || 0;
