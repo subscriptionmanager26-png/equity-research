@@ -99,21 +99,30 @@ export async function scheduleNextSlackPoll(startedAt = Date.now()) {
   }
   const wait = Math.max(8_000, CHAIN_INTERVAL_MS - (Date.now() - startedAt));
   await sleep(wait);
-  await triggerSlackPollRequest();
+  // Do not wait for the next poll's after() work — that would nest
+  // 56s sleeps and freeze this function until maxDuration.
+  await triggerSlackPollRequest({ waitForComplete: false });
 }
 
-export async function triggerSlackPollRequest() {
+export async function triggerSlackPollRequest(opts?: {
+  waitForComplete?: boolean;
+}) {
   const cfg = getConfig();
   if (!cfg.publicUrl) return;
   const secret = process.env.CRON_SECRET?.trim();
   const headers: Record<string, string> = {};
   if (secret) headers.Authorization = `Bearer ${secret}`;
+  const waitForComplete = opts?.waitForComplete !== false;
   const response = await fetch(`${cfg.publicUrl}/api/slack/poll`, {
     headers,
     cache: "no-store",
+    signal: AbortSignal.timeout(waitForComplete ? 25_000 : 12_000),
   });
   if (!response.ok) {
     throw new Error(`Slack poll HTTP ${response.status}`);
+  }
+  if (!waitForComplete) {
+    await response.body?.cancel();
   }
 }
 
