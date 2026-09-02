@@ -10,6 +10,7 @@ import {
 } from "@/lib/jobs";
 import {
   attachmentsFromSlackEvent,
+  enrichSlackThreadTs,
   fetchThreadContext,
   getSlackBotIdentity,
   isSlackBotMessage,
@@ -89,25 +90,26 @@ export async function handleSlackEvent(event: SlackInboundEvent) {
     return { ignored: true, reason: "duplicate_message" };
   }
 
-  const threadTs = isSlackThreadReply(event) ? event.thread_ts : undefined;
+  const enriched = await enrichSlackThreadTs(event);
+  const threadTs = isSlackThreadReply(enriched) ? enriched.thread_ts : undefined;
   const tracked = threadTs
-    ? await resolveTrackedThread(event.channel, threadTs)
+    ? await resolveTrackedThread(enriched.channel, threadTs)
     : undefined;
   const intent = classifySlackEvent({
-    type: event.type,
-    text: event.text,
-    ts: event.ts,
-    thread_ts: event.thread_ts,
-    channelId: event.channel,
+    type: enriched.type,
+    text: enriched.text,
+    ts: enriched.ts,
+    thread_ts: enriched.thread_ts,
+    channelId: enriched.channel,
     trackedThread: Boolean(tracked),
     relayOutbound: false,
   });
 
   if (intent === "follow_up") {
-    return handleThreadMessage(event);
+    return handleThreadMessage(enriched);
   }
   if (intent === "mention") {
-    return handleMention(event);
+    return handleMention(enriched);
   }
   return { ignored: true, reason: "not_pocketedge" };
 }

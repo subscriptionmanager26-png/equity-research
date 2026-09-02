@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 
 import {
   buildSlackMentionSearchQuery,
+  parseThreadTsFromPermalink,
   slackSearchAfterDate,
+  slackThreadTsFromSearchMatch,
   slackTsInLookback,
 } from "./slack-search";
 
@@ -33,5 +35,22 @@ describe("slack mention search", () => {
     assert.equal(slackTsInLookback(String(nowSec - 3600), nowSec), true);
     assert.equal(slackTsInLookback(String(nowSec - 3 * 86400), nowSec), false);
     assert.equal(slackTsInLookback("bad", nowSec), false);
+  });
+
+  it("reads thread_ts from Slack search permalinks", () => {
+    assert.equal(
+      parseThreadTsFromPermalink(
+        "https://example.slack.com/archives/C0/p1788371682220449?thread_ts=1788277171.885569&cid=C0",
+      ),
+      "1788277171.885569",
+    );
+    assert.equal(
+      slackThreadTsFromSearchMatch({
+        ts: "1788371682.220449",
+        permalink:
+          "https://example.slack.com/archives/C0/p1788371682220449?thread_ts=1788277171.885569",
+      }),
+      "1788277171.885569",
+    );
   });
 });

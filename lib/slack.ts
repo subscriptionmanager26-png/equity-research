@@ -5,6 +5,7 @@ import { WebClient } from "@slack/web-api";
 import { markdownToSlackMrkdwn } from "@/lib/chat-markup";
 import { getConfig } from "@/lib/config";
 import { markSlackMessageProcessed } from "@/lib/jobs";
+import { parseThreadTsFromPermalink } from "@/lib/slack-search";
 import { updateStore } from "@/lib/store";
 import type { JobFile, SlackInboundEvent } from "@/lib/types";
 
@@ -117,6 +118,41 @@ export function attachmentsFromSlackEvent(
     size: file.size,
     url: file.url_private_download,
   }));
+}
+
+export async function resolveSlackThreadAnchor(
+  channelId: string,
+  messageTs: string,
+) {
+  const result = await getSlackClient().conversations.replies({
+    channel: channelId,
+    ts: messageTs,
+    limit: 1,
+    inclusive: true,
+  });
+  if (!result.ok || !result.messages?.length) return undefined;
+  const parent = result.messages[0]?.ts;
+  if (!parent || parent === messageTs) return undefined;
+  return parent;
+}
+
+export async function enrichSlackThreadTs(
+  event: SlackInboundEvent,
+): Promise<SlackInboundEvent> {
+  if (event.thread_ts && event.thread_ts !== event.ts) return event;
+
+  const fromPermalink = parseThreadTsFromPermalink(event.permalink);
+  if (fromPermalink && fromPermalink !== event.ts) {
+    return { ...event, thread_ts: fromPermalink };
+  }
+
+  const anchor = await resolveSlackThreadAnchor(event.channel, event.ts).catch(
+    () => undefined,
+  );
+  if (anchor && anchor !== event.ts) {
+    return { ...event, thread_ts: anchor };
+  }
+  return event;
 }
 
 export async function fetchThreadContext(input: {

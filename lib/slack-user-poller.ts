@@ -9,6 +9,7 @@ import {
 } from "@/lib/jobs";
 import {
   buildSlackMentionSearchQuery,
+  slackThreadTsFromSearchMatch,
   slackTsInLookback,
 } from "@/lib/slack-search";
 import { acquireSlackPollChainSlot, getStore, updateStore } from "@/lib/store";
@@ -236,16 +237,28 @@ async function pollSearchTriggers(
       if (!slackTsInLookback(match.ts)) continue;
       const text = match.text ?? "";
       if (!messageTriggersRelay(text)) continue;
+      const threadTs = slackThreadTsFromSearchMatch({
+        ts: match.ts,
+        thread_ts:
+          "thread_ts" in match && typeof match.thread_ts === "string"
+            ? match.thread_ts
+            : undefined,
+        permalink:
+          "permalink" in match && typeof match.permalink === "string"
+            ? match.permalink
+            : undefined,
+      });
 
       await processMessage(
         {
-          type: "app_mention",
+          type: threadTs ? "message" : "app_mention",
           user: match.user,
           text: match.text,
           ts: match.ts,
-          thread_ts:
-            "thread_ts" in match && typeof match.thread_ts === "string"
-              ? match.thread_ts
+          thread_ts: threadTs,
+          permalink:
+            "permalink" in match && typeof match.permalink === "string"
+              ? match.permalink
               : undefined,
           channel: match.channel.id,
         },

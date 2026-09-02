@@ -48,6 +48,20 @@ describe("classifySlackEvent", () => {
     );
   });
 
+  it("treats search app_mention hits in a tracked thread as follow-ups", () => {
+    assert.equal(
+      classifySlackEvent({
+        type: "app_mention",
+        text: "@pocketedge compare returns",
+        ts: "2.0",
+        thread_ts: "1.0",
+        channelId: "C0CHANNEL",
+        trackedThread: true,
+      }),
+      "follow_up",
+    );
+  });
+
   it("treats a Slack app_mention as a trigger even if the word pocketedge is stripped", () => {
     assert.equal(
       classifySlackEvent({

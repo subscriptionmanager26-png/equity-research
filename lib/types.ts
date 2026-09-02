@@ -122,6 +122,7 @@ export type SlackInboundEvent = {
   text?: string;
   ts: string;
   thread_ts?: string;
+  permalink?: string;
   channel: string;
   bot_id?: string;
   subtype?: string;

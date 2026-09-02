@@ -28,3 +28,21 @@ export function slackTsInLookback(
   if (!Number.isFinite(value) || value <= 0) return false;
   return value >= nowSec - lookbackSec;
 }
+
+/** Slack search permalinks carry thread_ts when the hit is a thread reply. */
+export function parseThreadTsFromPermalink(permalink?: string) {
+  if (!permalink) return undefined;
+  const match = permalink.match(/[?&]thread_ts=([0-9]+\.[0-9]+)/);
+  return match?.[1];
+}
+
+export function slackThreadTsFromSearchMatch(match: {
+  ts?: string;
+  thread_ts?: string;
+  permalink?: string;
+}) {
+  if (match.thread_ts && match.thread_ts !== match.ts) return match.thread_ts;
+  const fromPermalink = parseThreadTsFromPermalink(match.permalink);
+  if (fromPermalink && fromPermalink !== match.ts) return fromPermalink;
+  return undefined;
+}
