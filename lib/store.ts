@@ -161,6 +161,17 @@ export async function acquireSlackPollChainSlot(ttlSeconds = 52): Promise<boolea
   });
 }
 
+export async function releaseSlackPollChainSlot() {
+  if (kvEnabled()) {
+    const redis = await getRedis();
+    await redis.del(SLACK_POLL_CHAIN_KEY);
+    return;
+  }
+  await updateStore((data) => {
+    data.slackPollNextScheduledAt = new Date(0).toISOString();
+  });
+}
+
 let lastGoodStore: StoreData | undefined;
 let blobReadFailed = false;
 

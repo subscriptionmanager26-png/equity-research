@@ -12,7 +12,7 @@ import {
   slackThreadTsFromSearchMatch,
   slackTsInLookback,
 } from "@/lib/slack-search";
-import { acquireSlackPollChainSlot, getStore, updateStore } from "@/lib/store";
+import { acquireSlackPollChainSlot, getStore, releaseSlackPollChainSlot, updateStore } from "@/lib/store";
 import { scheduleSlackPollWake } from "@/lib/slack-poll-scheduler";
 import {
   getSlackBotIdentity,
@@ -71,36 +71,52 @@ export async function pollSlackOnce(options?: {
 }): Promise<SlackPollResult> {
   const cfg = getConfig();
   if (!cfg.slackUserPollConfigured) return { ok: false, reason: "no_user_token" };
-  if (!(await acquireSlackPollChainSlot(55))) {
+
+  if (!options?.force) {
+    const last = Date.parse((await getStore()).slackLastPollAt ?? "") || 0;
+    if (Date.now() - last < MIN_POLL_GAP_MS) {
+      return { ok: true, skipped: true, reason: "throttled", jobIds: [] };
+    }
+  }
+
+  if (!(await acquireSlackPollChainSlot(70))) {
     return { ok: true, skipped: true, reason: "poll_in_progress", jobIds: [] };
   }
-  const claimed = await updateStore((data) => {
-    const last = Date.parse(data.slackLastPollAt ?? "") || 0;
-    if (!options?.force && Date.now() - last < MIN_POLL_GAP_MS) {
-      return false;
+
+  try {
+    const claimed = await updateStore((data) => {
+      const last = Date.parse(data.slackLastPollAt ?? "") || 0;
+      if (!options?.force && Date.now() - last < MIN_POLL_GAP_MS) {
+        return false;
+      }
+      data.slackLastPollAt = new Date().toISOString();
+      return true;
+    });
+    if (!claimed) {
+      return { ok: true, skipped: true, reason: "throttled", jobIds: [] };
     }
-    data.slackLastPollAt = new Date().toISOString();
-    return true;
-  });
-  if (!claimed) {
-    return { ok: true, skipped: true, reason: "throttled", jobIds: [] };
+    const actor = await getSlackBotIdentity();
+    const jobIds: string[] = [];
+    const ctx: SlackPollCtx = {
+      processed: new Set((await getStore()).processedSlackMessages ?? []),
+      remainingNew: MAX_NEW_MESSAGES_PER_VERCEL_POLL,
+    };
+    await hydrateSlackThreadsFromJobs();
+    await runPollStep("channels", () => pollConfiguredChannels(actor.userId, jobIds, ctx));
+    await runPollStep("search", () => pollSearchTriggers(actor.userId, jobIds, ctx));
+    await runPollStep("threads", () => pollTrackedThreads(actor.userId, jobIds, ctx));
+    return { ok: true, actor: actor.name ?? actor.userId, jobIds };
+  } finally {
+    await releaseSlackPollChainSlot().catch((error) => {
+      console.error("[relay] Slack poll slot release failed", error);
+    });
   }
-  const actor = await getSlackBotIdentity();
-  const jobIds: string[] = [];
-  const ctx: SlackPollCtx = {
-    processed: new Set((await getStore()).processedSlackMessages ?? []),
-    remainingNew: MAX_NEW_MESSAGES_PER_VERCEL_POLL,
-  };
-  await hydrateSlackThreadsFromJobs();
-  await runPollStep("search", () => pollSearchTriggers(actor.userId, jobIds, ctx));
-  await runPollStep("threads", () => pollTrackedThreads(actor.userId, jobIds, ctx));
-  await runPollStep("channels", () => pollConfiguredChannels(actor.userId, jobIds, ctx));
-  return { ok: true, actor: actor.name ?? actor.userId, jobIds };
 }
 
 export async function maybeStartSlackPollChain() {
   const cfg = getConfig();
   if (!cfg.vercel || !cfg.slackUserPollConfigured || !cfg.publicUrl) return;
+  if (process.env.QSTASH_TOKEN?.trim()) return;
   const last = Date.parse((await getStore()).slackLastPollAt ?? "") || 0;
   if (Date.now() - last < STALE_CHAIN_MS) return;
   await triggerSlackPollRequest({ waitForComplete: false });
