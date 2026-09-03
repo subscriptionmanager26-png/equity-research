@@ -3,12 +3,45 @@ import { updateStore } from "@/lib/store";
 
 const MIN_WAKE_SEC = 30;
 const MAX_WAKE_SEC = 120;
+const QSTASH_SCHEDULE_ID = "relay-slack-poll-minute";
 
 function qstashToken() {
   return process.env.QSTASH_TOKEN?.trim() || "";
 }
 
-/** Schedule the next /api/slack/poll wake. Prefer QStash; fall back to waitUntil self-fetch. */
+function pollDestination() {
+  const cfg = getConfig();
+  return `${cfg.publicUrl}/api/slack/poll?force=1`;
+}
+
+function pollHeaders(): Record<string, string> {
+  const secret = process.env.CRON_SECRET?.trim();
+  const headers: Record<string, string> = {};
+  if (secret) headers.Authorization = `Bearer ${secret}`;
+  return headers;
+}
+
+/** Ensure a QStash cron fires /api/slack/poll every minute (idempotent). */
+export async function ensureSlackPollSchedule() {
+  const cfg = getConfig();
+  if (!cfg.vercel || !cfg.publicUrl || !cfg.slackUserPollConfigured) return;
+  if (!qstashToken()) return;
+
+  const { Client } = await import("@upstash/qstash");
+  const client = new Client({ token: qstashToken() });
+  await client.schedules.create({
+    scheduleId: QSTASH_SCHEDULE_ID,
+    destination: pollDestination(),
+    cron: "* * * * *",
+    method: "POST",
+    headers: pollHeaders(),
+    retries: 2,
+    label: "relay-slack-poll",
+  });
+  console.info("[relay] QStash minute schedule ensured for Slack poll");
+}
+
+/** One-shot delayed wake (fallback when QStash token is missing). */
 export async function scheduleSlackPollWake(delaySec: number) {
   const cfg = getConfig();
   if (!cfg.vercel || !cfg.publicUrl || !cfg.slackUserPollConfigured) return;
@@ -45,16 +78,11 @@ export async function scheduleSlackPollWake(delaySec: number) {
 
 async function scheduleViaQStash(delaySec: number) {
   const { Client } = await import("@upstash/qstash");
-  const cfg = getConfig();
-  const secret = process.env.CRON_SECRET?.trim();
-  const headers: Record<string, string> = {};
-  if (secret) headers.Authorization = `Bearer ${secret}`;
   const client = new Client({ token: qstashToken() });
   await client.publishJSON({
-    url: `${cfg.publicUrl}/api/slack/poll?force=1`,
-    headers,
+    url: pollDestination(),
+    headers: pollHeaders(),
     delay: delaySec,
-    deduplicationId: "relay-slack-poll",
   });
   await updateStore((data) => {
     data.slackPollNextScheduledAt = new Date(

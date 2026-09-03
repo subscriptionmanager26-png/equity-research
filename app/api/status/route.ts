@@ -37,6 +37,8 @@ export async function GET() {
         lastMessageAt: chat.lastMessageAt,
       })),
       jobCount: store.jobs.length,
+      slackLastPollAt: store.slackLastPollAt ?? null,
+      slackPollNextScheduledAt: store.slackPollNextScheduledAt ?? null,
     });
   } catch (error) {
     console.error("[relay] /api/status store read failed", error);

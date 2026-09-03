@@ -26,10 +26,18 @@ async function handlePoll(request: Request) {
   const force = new URL(request.url).searchParams.get("force") === "1";
   const slack = await pollSlackOnce({ force });
 
-  continueAfterResponse(async () => {
+  if (!process.env.QSTASH_TOKEN?.trim()) {
     await scheduleNextSlackPoll(startedAt).catch((error) => {
       console.error("[relay] Slack poll chain failed", error);
     });
+  } else {
+    const { ensureSlackPollSchedule } = await import("@/lib/slack-poll-scheduler");
+    await ensureSlackPollSchedule().catch((error) => {
+      console.error("[relay] Slack poll schedule ensure failed", error);
+    });
+  }
+
+  continueAfterResponse(async () => {
     await pollDispatchedJobs({ maxMs: 20_000 }).catch((error) => {
       console.error("[relay] Cursor poll during Slack scan failed", error);
     });

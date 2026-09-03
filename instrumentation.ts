@@ -12,13 +12,9 @@ export async function register() {
     console.info(
       "[relay] Vercel mode: Telegram webhook + Cursor status webhook + minute Slack scan",
     );
-    const { maybeStartSlackPollChain } = await import("./lib/slack-user-poller");
-    const { scheduleSlackPollWake } = await import("./lib/slack-poll-scheduler");
-    void maybeStartSlackPollChain().catch((error) => {
-      console.error("[relay] Slack poll chain start failed", error);
-    });
-    void scheduleSlackPollWake(45).catch((error) => {
-      console.error("[relay] Slack poll bootstrap schedule failed", error);
+    const { ensureSlackPollSchedule } = await import("./lib/slack-poll-scheduler");
+    await ensureSlackPollSchedule().catch((error) => {
+      console.error("[relay] Slack poll schedule bootstrap failed", error);
     });
     return;
   }

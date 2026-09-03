@@ -1,3 +1,5 @@
+# Backup only — GitHub may delay scheduled runs by several minutes on free tier.
+# Primary poller is Upstash QStash cron (every minute).
 name: Slack mention scan
 
 on:
