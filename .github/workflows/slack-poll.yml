@@ -12,12 +12,9 @@ jobs:
   poll:
     runs-on: ubuntu-latest
     steps:
-      - name: Kick Relay Slack scan (every ~60s for 5 min)
+      - name: Kick Relay Slack scan
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          URL="https://equity-research-ivory.vercel.app/api/slack/poll?force=1"
-          for i in 1 2 3 4 5; do
-            curl -fsS --max-time 50 -H "Authorization: Bearer ${CRON_SECRET}" "$URL" || true
-            if [ "$i" -lt 5 ]; then sleep 60; fi
-          done
+          curl -fsS --max-time 50 -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://equity-research-ivory.vercel.app/api/slack/poll?force=1"
