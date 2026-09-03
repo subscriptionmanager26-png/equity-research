@@ -5,10 +5,10 @@ Relay answers Slack **as you** with `SLACK_USER_TOKEN`. It **searches** any chan
 ## Production (Vercel)
 
 1. Create a Slack app (or reuse yours) and add **User Token Scopes** below, then reinstall so you get an `xoxp-…` token.
-2. Set on Vercel Production: `SLACK_USER_TOKEN`, `SLACK_TRIGGER_WORD=pocketedge`, `CRON_SECRET`.
+2. Set on Vercel Production: `SLACK_USER_TOKEN`, `SLACK_TRIGGER_WORD=pocketedge`, `CRON_SECRET`, and **`QSTASH_TOKEN`** (Upstash QStash — same console as Redis). QStash pings `/api/slack/poll` about once a minute; without it, Hobby `waitUntil` self-chains are unreliable and GitHub’s 5‑minute cron often runs only every few hours on private repos.
 3. Optional: `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` if you still want Events API as a backup. Not required for channel pickup.
 
-Relay scans Slack about **once a minute** via `/api/slack/poll` (a self-chain on Vercel, because Hobby cron cannot run more than once per day). Telegram/Slack webhooks still kick an extra scan. A daily Vercel cron restarts the chain if it went idle. Search looks back two days, so a missed `@pocketedge` is picked up on the next scan instead of being skipped by a stale cursor.
+Relay scans Slack about **once a minute** via `/api/slack/poll`. **QStash** is the reliable scheduler on Vercel Hobby. A daily Vercel cron plus the GitHub Action (`.github/workflows/slack-poll.yml`) are backups only. Search looks back two days, so a missed `@pocketedge` is picked up on the next scan instead of being skipped by a stale cursor.
 
 Say `@pocketedge …` in any channel you can read. In **channels**, only messages that mention `@pocketedge` start a job or a follow-up — ordinary channel or thread chatter is left alone. In **DMs with you**, a thread reply is still a follow-up without the mention.
 

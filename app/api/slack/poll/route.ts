@@ -23,7 +23,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const startedAt = Date.now();
-  const slack = await pollSlackOnce();
+  const force = new URL(request.url).searchParams.get("force") === "1";
+  const slack = await pollSlackOnce({ force });
 
   continueAfterResponse(async () => {
     await scheduleNextSlackPoll(startedAt).catch((error) => {

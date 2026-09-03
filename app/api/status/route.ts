@@ -5,8 +5,12 @@ export const dynamic = "force-dynamic";
 import { publicStatus } from "@/lib/config";
 import { getStore } from "@/lib/store";
 import { replyUrl } from "@/lib/cursor";
+import { maybeStartSlackPollChain } from "@/lib/slack-user-poller";
 
 export async function GET() {
+  void maybeStartSlackPollChain().catch((error) => {
+    console.error("[relay] Slack poll chain start from status failed", error);
+  });
   try {
     const store = await getStore();
     const status = publicStatus();

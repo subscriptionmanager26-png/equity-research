@@ -12,7 +12,8 @@ import {
   slackThreadTsFromSearchMatch,
   slackTsInLookback,
 } from "@/lib/slack-search";
-import { acquireSlackPollChainSlot, getStore, updateStore } from "@/lib/store";
+import { getStore, updateStore } from "@/lib/store";
+import { scheduleSlackPollWake } from "@/lib/slack-poll-scheduler";
 import {
   getSlackBotIdentity,
   getSlackClient,
@@ -29,10 +30,8 @@ declare global {
 const POLL_MS = 3000;
 const MIN_POLL_GAP_MS = 45_000;
 const CHAIN_INTERVAL_MS = 56_000;
-/** Hobby maxDuration is 60s; a 56s sleep inside waitUntil 504s the request. */
-const MAX_CHAIN_SLEEP_MS = 12_000;
 const MAX_NEW_MESSAGES_PER_VERCEL_POLL = 3;
-const STALE_CHAIN_MS = 90_000;
+const STALE_CHAIN_MS = 75_000;
 
 type SlackPollCtx = {
   processed: Set<string>;
@@ -105,23 +104,16 @@ export async function maybeStartSlackPollChain() {
 }
 
 export async function scheduleNextSlackPoll(startedAt = Date.now()) {
-  const cfg = getConfig();
-  if (!cfg.vercel || !cfg.publicUrl || !cfg.slackUserPollConfigured) return;
-  if (!(await acquireSlackPollChainSlot(52))) {
-    return;
-  }
-  const wait = Math.min(
-    MAX_CHAIN_SLEEP_MS,
-    Math.max(3_000, CHAIN_INTERVAL_MS - (Date.now() - startedAt)),
+  const elapsed = Date.now() - startedAt;
+  const delaySec = Math.ceil(
+    Math.max(3_000, CHAIN_INTERVAL_MS - elapsed) / 1000,
   );
-  await sleep(wait);
-  // Do not wait for the next poll's after() work — that would nest
-  // 56s sleeps and freeze this function until maxDuration.
-  await triggerSlackPollRequest({ waitForComplete: false });
+  await scheduleSlackPollWake(delaySec);
 }
 
 export async function triggerSlackPollRequest(opts?: {
   waitForComplete?: boolean;
+  force?: boolean;
 }) {
   const cfg = getConfig();
   if (!cfg.publicUrl) return;
@@ -129,7 +121,9 @@ export async function triggerSlackPollRequest(opts?: {
   const headers: Record<string, string> = {};
   if (secret) headers.Authorization = `Bearer ${secret}`;
   const waitForComplete = opts?.waitForComplete !== false;
-  const response = await fetch(`${cfg.publicUrl}/api/slack/poll`, {
+  const url = new URL(`${cfg.publicUrl}/api/slack/poll`);
+  if (opts?.force) url.searchParams.set("force", "1");
+  const response = await fetch(url.toString(), {
     headers,
     cache: "no-store",
     signal: AbortSignal.timeout(waitForComplete ? 25_000 : 12_000),
