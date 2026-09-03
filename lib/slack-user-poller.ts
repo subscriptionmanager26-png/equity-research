@@ -12,7 +12,7 @@ import {
   slackThreadTsFromSearchMatch,
   slackTsInLookback,
 } from "@/lib/slack-search";
-import { acquireSlackPollChainSlot, getStore, releaseSlackPollChainSlot, updateStore } from "@/lib/store";
+import { acquireSlackPollChainSlot, getStore, isSlackInboundMessageProcessed, releaseSlackPollChainSlot, updateStore } from "@/lib/store";
 import { scheduleSlackPollWake } from "@/lib/slack-poll-scheduler";
 import {
   getSlackBotIdentity,
@@ -30,7 +30,7 @@ declare global {
 const POLL_MS = 3000;
 const MIN_POLL_GAP_MS = 45_000;
 const CHAIN_INTERVAL_MS = 56_000;
-const MAX_NEW_MESSAGES_PER_VERCEL_POLL = 3;
+const MAX_NEW_MESSAGES_PER_VERCEL_POLL = 8;
 const STALE_CHAIN_MS = 75_000;
 
 type SlackPollCtx = {
@@ -406,7 +406,7 @@ async function pollChannel(
   if (!result.ok || !result.messages?.length) return;
 
   let newestTs = cursor;
-  for (const message of [...result.messages].reverse()) {
+  for (const message of result.messages) {
     if (!message.ts || !message.user) continue;
     if (Number(message.ts) <= Number(cursor)) continue;
     newestTs = message.ts;
@@ -448,7 +448,6 @@ async function processMessage(
 ) {
   const messageKey = `${event.channel}:${event.ts}`;
   if (ctx?.processed.has(messageKey)) return;
-  if (ctx && ctx.remainingNew <= 0) return;
 
   if (isRelaySlackOutbound(event)) return;
   if (shouldIgnoreSlackSubtype(event.subtype)) return;
@@ -464,11 +463,10 @@ async function processMessage(
     if (!tracked) return;
   }
   if (!ownMessage && isSlackBotMessage(event, actorUserId)) return;
+  if (await isSlackInboundMessageProcessed(messageKey)) return;
+  if (ctx && ctx.remainingNew <= 0) return;
 
-  if (ctx) {
-    ctx.processed.add(messageKey);
-    ctx.remainingNew -= 1;
-  }
+  if (ctx) ctx.processed.add(messageKey);
 
   console.info(
     `[relay] Slack ${isSlackThreadReply(event) ? "thread reply" : "trigger"} in ${event.channel}: ${(event.text ?? "").slice(0, 80)}`,
@@ -480,6 +478,7 @@ async function processMessage(
   });
   if (result && "jobId" in result && result.jobId) {
     jobIds.push(result.jobId);
+    if (ctx) ctx.remainingNew -= 1;
   }
 }
 

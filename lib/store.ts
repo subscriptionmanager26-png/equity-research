@@ -113,6 +113,16 @@ function normalizeStore(parsed: StoreData): StoreData {
 const SLACK_POLL_CHAIN_KEY = "relay:slack-poll-chain";
 const SLACK_MSG_PREFIX = "relay:slack-msg:";
 
+export async function isSlackInboundMessageProcessed(messageKey: string): Promise<boolean> {
+  if (kvEnabled()) {
+    const redis = await getRedis();
+    const value = await redis.get(`${SLACK_MSG_PREFIX}${messageKey}`);
+    if (value) return true;
+  }
+  const data = await getStore();
+  return Boolean(data.processedSlackMessages?.includes(messageKey));
+}
+
 /** Cross-instance dedupe for a Slack channel:ts before dispatching a job. */
 export async function claimSlackInboundMessage(messageKey: string): Promise<boolean> {
   const ttlSeconds = 60 * 60 * 24 * 14;
