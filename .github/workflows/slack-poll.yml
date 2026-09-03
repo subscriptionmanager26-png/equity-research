@@ -19,5 +19,5 @@ jobs:
           URL="https://equity-research-ivory.vercel.app/api/slack/poll?force=1"
           for i in 1 2 3 4 5; do
             curl -fsS --max-time 50 -H "Authorization: Bearer ${CRON_SECRET}" "$URL" || true
-            [ "$i" -lt 5 ] && sleep 60
+            if [ "$i" -lt 5 ]; then sleep 60; fi
           done
