@@ -1,4 +1,4 @@
-import { getStore, updateStore } from "@/lib/store";
+import { claimSlackInboundMessage, getStore, updateStore } from "@/lib/store";
 import type {
   InboundMessage,
   Job,
@@ -282,13 +282,7 @@ export async function setSlackSearchCursor(ts: string) {
 }
 
 export async function markSlackMessageProcessed(messageKey: string): Promise<boolean> {
-  return updateStore((data) => {
-    data.processedSlackMessages = data.processedSlackMessages ?? [];
-    if (data.processedSlackMessages.includes(messageKey)) return false;
-    data.processedSlackMessages.unshift(messageKey);
-    data.processedSlackMessages = data.processedSlackMessages.slice(0, 2000);
-    return true;
-  });
+  return claimSlackInboundMessage(messageKey);
 }
 
 export async function getSlackPollCursor(channelId: string) {

@@ -111,6 +111,35 @@ function normalizeStore(parsed: StoreData): StoreData {
 }
 
 const SLACK_POLL_CHAIN_KEY = "relay:slack-poll-chain";
+const SLACK_MSG_PREFIX = "relay:slack-msg:";
+
+/** Cross-instance dedupe for a Slack channel:ts before dispatching a job. */
+export async function claimSlackInboundMessage(messageKey: string): Promise<boolean> {
+  const ttlSeconds = 60 * 60 * 24 * 14;
+  if (kvEnabled()) {
+    const redis = await getRedis();
+    const ok = await redis.set(`${SLACK_MSG_PREFIX}${messageKey}`, "1", {
+      nx: true,
+      ex: ttlSeconds,
+    });
+    if (ok !== "OK") return false;
+    await updateStore((data) => {
+      data.processedSlackMessages = data.processedSlackMessages ?? [];
+      if (!data.processedSlackMessages.includes(messageKey)) {
+        data.processedSlackMessages.unshift(messageKey);
+        data.processedSlackMessages = data.processedSlackMessages.slice(0, 2000);
+      }
+    });
+    return true;
+  }
+  return updateStore((data) => {
+    data.processedSlackMessages = data.processedSlackMessages ?? [];
+    if (data.processedSlackMessages.includes(messageKey)) return false;
+    data.processedSlackMessages.unshift(messageKey);
+    data.processedSlackMessages = data.processedSlackMessages.slice(0, 2000);
+    return true;
+  });
+}
 
 /** One-at-a-time slot so Vercel minute scans cannot fork into parallel loops. */
 export async function acquireSlackPollChainSlot(ttlSeconds = 52): Promise<boolean> {

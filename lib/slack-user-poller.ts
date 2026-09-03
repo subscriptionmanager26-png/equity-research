@@ -12,7 +12,7 @@ import {
   slackThreadTsFromSearchMatch,
   slackTsInLookback,
 } from "@/lib/slack-search";
-import { getStore, updateStore } from "@/lib/store";
+import { acquireSlackPollChainSlot, getStore, updateStore } from "@/lib/store";
 import { scheduleSlackPollWake } from "@/lib/slack-poll-scheduler";
 import {
   getSlackBotIdentity,
@@ -71,6 +71,9 @@ export async function pollSlackOnce(options?: {
 }): Promise<SlackPollResult> {
   const cfg = getConfig();
   if (!cfg.slackUserPollConfigured) return { ok: false, reason: "no_user_token" };
+  if (!(await acquireSlackPollChainSlot(55))) {
+    return { ok: true, skipped: true, reason: "poll_in_progress", jobIds: [] };
+  }
   const claimed = await updateStore((data) => {
     const last = Date.parse(data.slackLastPollAt ?? "") || 0;
     if (!options?.force && Date.now() - last < MIN_POLL_GAP_MS) {
