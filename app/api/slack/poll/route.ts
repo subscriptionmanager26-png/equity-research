@@ -17,8 +17,8 @@ function authorized(request: Request) {
   return timingSafeEqual(header, `Bearer ${secret}`);
 }
 
-/** Search Slack for @pocketedge about once a minute (self-chain on Vercel). */
-export async function GET(request: Request) {
+/** Search Slack for @pocketedge about once a minute (QStash POST or GET cron). */
+async function handlePoll(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -36,4 +36,12 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json(slack);
+}
+
+export async function GET(request: Request) {
+  return handlePoll(request);
+}
+
+export async function POST(request: Request) {
+  return handlePoll(request);
 }
