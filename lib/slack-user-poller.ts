@@ -15,7 +15,7 @@ import {
 import { acquireSlackPollChainSlot, getStore, isSlackInboundMessageProcessed, releaseSlackPollChainSlot, updateStore } from "@/lib/store";
 import { scheduleSlackPollWake } from "@/lib/slack-poll-scheduler";
 import {
-  getSlackBotIdentity,
+  getSlackHumanIdentity,
   getSlackClient,
   isSlackBotMessage,
   messageTriggersRelay,
@@ -44,7 +44,7 @@ export async function startSlackUserPoller() {
   if (!cfg.slackUserPollConfigured) return;
 
   globalThis.__relaySlackUserPoller = { started: true };
-  const actor = await getSlackBotIdentity().catch((error) => {
+  const actor = await getSlackHumanIdentity().catch((error) => {
     console.error("[relay] Slack user token auth failed", error);
     globalThis.__relaySlackUserPoller = { started: false };
     return null;
@@ -95,7 +95,7 @@ export async function pollSlackOnce(options?: {
     if (!claimed) {
       return { ok: true, skipped: true, reason: "throttled", jobIds: [] };
     }
-    const actor = await getSlackBotIdentity();
+    const actor = await getSlackHumanIdentity();
     const jobIds: string[] = [];
     const ctx: SlackPollCtx = {
       processed: new Set((await getStore()).processedSlackMessages ?? []),

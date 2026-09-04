@@ -100,6 +100,13 @@ export type StoreData = {
     name?: string;
     checkedAt: string;
   };
+  slackHuman?: {
+    id: string;
+    userId: string;
+    teamId?: string;
+    name?: string;
+    checkedAt: string;
+  };
   slackSearchCursor?: string;
   slackPollCursors?: Record<string, string>;
   processedSlackMessages?: string[];

@@ -21,7 +21,8 @@ export function getSlackAuthToken() {
   return token;
 }
 
-export function getSlackClient() {
+/** Read/search/history — prefer user token when available. */
+export function getSlackReadClient() {
   const cfg = getConfig();
   if (cfg.slackUserToken) {
     userClient ??= new WebClient(cfg.slackUserToken);
@@ -32,6 +33,24 @@ export function getSlackClient() {
     return botClient;
   }
   throw new Error("Set SLACK_USER_TOKEN or SLACK_BOT_TOKEN");
+}
+
+/** Outbound replies, reactions, uploads — prefer bot token when available. */
+export function getSlackReplyClient() {
+  const cfg = getConfig();
+  if (cfg.slackBotToken) {
+    botClient ??= new WebClient(cfg.slackBotToken);
+    return botClient;
+  }
+  if (cfg.slackUserToken) {
+    userClient ??= new WebClient(cfg.slackUserToken);
+    return userClient;
+  }
+  throw new Error("Set SLACK_USER_TOKEN or SLACK_BOT_TOKEN");
+}
+
+export function getSlackClient() {
+  return getSlackReadClient();
 }
 
 export function relayActorLabel() {
@@ -54,12 +73,25 @@ export function messageTriggersRelay(text: string) {
   return new RegExp(`^[^\\n]{0,40}@?${word}\\b`, "i").test(head);
 }
 
-export async function getSlackBotIdentity() {
-  const stored = (await import("@/lib/store")).getStore().then((s) => s.slackBot);
-  const cached = await stored;
-  if (cached?.userId) return cached;
+async function loadSlackIdentity(
+  client: WebClient,
+  cacheKey: "slackBot" | "slackHuman",
+) {
+  const store = await (await import("@/lib/store")).getStore();
+  const cached = store[cacheKey];
+  const cfg = getConfig();
+  const expectedBotId =
+    cacheKey === "slackBot" && cfg.slackMentionUserId
+      ? cfg.slackMentionUserId
+      : undefined;
+  if (
+    cached?.userId &&
+    (!expectedBotId || cached.userId === expectedBotId)
+  ) {
+    return cached;
+  }
 
-  const result = await getSlackClient().auth.test();
+  const result = await client.auth.test();
   if (!result.ok || !result.user_id) {
     throw new Error("Slack auth.test failed");
   }
@@ -71,9 +103,21 @@ export async function getSlackBotIdentity() {
     checkedAt: new Date().toISOString(),
   };
   await updateStore((data) => {
-    data.slackBot = identity;
+    data[cacheKey] = identity;
   });
   return identity;
+}
+
+/** Relay's outbound Slack identity (bot when SLACK_BOT_TOKEN is set). */
+export async function getSlackBotIdentity() {
+  return loadSlackIdentity(getSlackReplyClient(), "slackBot");
+}
+
+/** Human workspace user for poll ownership checks (user token). */
+export async function getSlackHumanIdentity() {
+  const cfg = getConfig();
+  if (!cfg.slackUserToken) return getSlackBotIdentity();
+  return loadSlackIdentity(getSlackReadClient(), "slackHuman");
 }
 
 export function verifySlackSignature(input: {
@@ -194,7 +238,7 @@ export async function sendSlackMessage(input: {
   let lastTs: string | undefined;
   for (const chunk of chunks) {
     const thread = input.threadTs ? { thread_ts: input.threadTs } : {};
-    let result = await getSlackClient().chat.postMessage({
+    let result = await getSlackReplyClient().chat.postMessage({
       channel: input.channelId,
       text: chunk,
       mrkdwn: true,
@@ -205,7 +249,7 @@ export async function sendSlackMessage(input: {
       ...thread,
     });
     if (!result.ok && String(result.error ?? "").includes("metadata")) {
-      result = await getSlackClient().chat.postMessage({
+      result = await getSlackReplyClient().chat.postMessage({
         channel: input.channelId,
         text: chunk,
         mrkdwn: true,
@@ -233,7 +277,7 @@ export async function addSlackReaction(input: {
   timestamp: string;
   name: string;
 }) {
-  const result = await getSlackClient().reactions.add({
+  const result = await getSlackReplyClient().reactions.add({
     channel: input.channelId,
     timestamp: input.timestamp,
     name: input.name,
@@ -247,7 +291,7 @@ export async function removeSlackReaction(input: {
   timestamp: string;
   name: string;
 }) {
-  const result = await getSlackClient().reactions.remove({
+  const result = await getSlackReplyClient().reactions.remove({
     channel: input.channelId,
     timestamp: input.timestamp,
     name: input.name,
@@ -291,7 +335,7 @@ export async function sendSlackFile(input: {
 }) {
   const copy = new Uint8Array(input.bytes.byteLength);
   copy.set(input.bytes);
-  const result = await getSlackClient().filesUploadV2({
+  const result = await getSlackReplyClient().filesUploadV2({
     channel_id: input.channelId,
     thread_ts: input.threadTs,
     filename: input.name,
@@ -328,7 +372,9 @@ export function isSlackBotMessage(
   if (event.bot_id) return true;
   // User-token mode posts as the human; only real bot_id traffic is bot traffic.
   if (getConfig().slackReplyAsUser) return false;
-  if (botUserId && event.user === botUserId) return true;
+  if (getConfig().slackReplyAsBot && botUserId && event.user === botUserId) {
+    return true;
+  }
   return false;
 }
 
