@@ -16,7 +16,7 @@ import {
   latestChat,
   listChats,
 } from "@/lib/jobs";
-import { ackSlackDone, sendSlackFile, sendSlackMessage } from "@/lib/slack";
+import { ackSlackDone, sendSlackFile, sendSlackMessage, slackUploadErrorDetail } from "@/lib/slack";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
 import type { Job, JobSource, TelegramChat } from "@/lib/types";
 

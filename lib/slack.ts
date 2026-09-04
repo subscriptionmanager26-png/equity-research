@@ -325,7 +325,7 @@ export async function ackSlackDone(channelId: string, timestamp?: string) {
   });
 }
 
-function slackUploadErrorDetail(error: unknown, fileName: string) {
+export function slackUploadErrorDetail(error: unknown, fileName: string) {
   const data =
     error &&
     typeof error === "object" &&
