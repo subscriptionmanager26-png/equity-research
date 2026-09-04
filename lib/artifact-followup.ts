@@ -113,7 +113,6 @@ export async function followUpArtifacts(
     return;
   }
 
-  const names = delivery.files ?? [];
   await addJobEvent(
     jobId,
     {
