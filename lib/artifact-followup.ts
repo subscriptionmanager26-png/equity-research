@@ -72,7 +72,7 @@ export async function followUpArtifacts(
     return;
   }
 
-  await deliverReply({
+  const delivery = await deliverReply({
     jobId,
     job: current,
     status: "finished",
@@ -80,7 +80,40 @@ export async function followUpArtifacts(
     files: deliverable,
   });
 
-  const names = deliverable.map((file) => file.name);
+  const names = delivery.files ?? [];
+  if (!names.length) {
+    if (attempts >= MAX_ARTIFACT_FOLLOWUP_ATTEMPTS) {
+      await addJobEvent(
+        jobId,
+        {
+          type: "artifact_timeout",
+          detail:
+            "Cursor published the file but Slack upload failed — add files:write to the Pocketedge bot and reinstall the app.",
+        },
+        { pendingArtifacts: undefined },
+      );
+      return;
+    }
+    await addJobEvent(
+      jobId,
+      {
+        type: "artifact_retry",
+        detail: `Slack file upload failed (attempt ${attempts})`,
+      },
+      {
+        pendingArtifacts: {
+          agentId,
+          mentionedPaths:
+            current.pendingArtifacts?.mentionedPaths ??
+            extractMentionedArtifactPaths(assistantText),
+          attempts,
+        },
+      },
+    );
+    return;
+  }
+
+  const names = delivery.files ?? [];
   await addJobEvent(
     jobId,
     {

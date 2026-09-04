@@ -218,9 +218,9 @@ async function deliverSlackReply(
       });
       deliveredFiles.push(file.name);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "upload failed";
+      const detail = slackUploadErrorDetail(error, file.name);
       console.error(`[relay] Slack file ${file.name} failed`, error);
-      uploadErrors.push(`${file.name}: ${detail}`);
+      uploadErrors.push(detail);
     }
   }
 

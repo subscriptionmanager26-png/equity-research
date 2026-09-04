@@ -325,6 +325,21 @@ export async function ackSlackDone(channelId: string, timestamp?: string) {
   });
 }
 
+function slackUploadErrorDetail(error: unknown, fileName: string) {
+  const data =
+    error &&
+    typeof error === "object" &&
+    "data" in error &&
+    error.data &&
+    typeof error.data === "object"
+      ? (error.data as { error?: string; needed?: string })
+      : undefined;
+  if (data?.error === "missing_scope" && data.needed?.includes("files")) {
+    return `${fileName}: Slack bot needs files:write (and files:read) — add under OAuth & Permissions → Bot Token Scopes, then reinstall the Pocketedge app to Prospera.`;
+  }
+  return error instanceof Error ? error.message : "upload failed";
+}
+
 export async function sendSlackFile(input: {
   channelId: string;
   name: string;

@@ -1,12 +1,12 @@
 # Slack setup
 
-Relay answers Slack **as you** with `SLACK_USER_TOKEN`. It **searches** any channel or DM you can already read for `pocketedge` / `@pocketedge`. You do **not** invite a bot to each channel. Replies are **thread-only** (not also posted to the channel).
+Relay answers Slack **as the Pocketedge bot** (`SLACK_BOT_TOKEN`). The user token (`SLACK_USER_TOKEN`) is still used to search channels you can read. Replies are **thread-only**.
 
 ## Production (Vercel)
 
 1. Create a Slack app (or reuse yours) and add **User Token Scopes** below, then reinstall so you get an `xoxp-…` token.
 2. Set on Vercel Production: `SLACK_USER_TOKEN`, `SLACK_TRIGGER_WORD=pocketedge`, `CRON_SECRET`, and **`QSTASH_TOKEN`** (Upstash QStash — same console as Redis). QStash pings `/api/slack/poll` about once a minute; without it, Hobby `waitUntil` self-chains are unreliable and GitHub’s 5‑minute cron often runs only every few hours on private repos.
-3. Optional: `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` if you still want Events API as a backup. Not required for channel pickup.
+3. **`SLACK_BOT_TOKEN`** + **`SLACK_SIGNING_SECRET`** for instant `@Pocketedge` mentions and **artifact file uploads** (`files:write` required).
 
 Relay scans Slack about **once a minute** via `/api/slack/poll`. **QStash** is the reliable scheduler on Vercel Hobby. A daily Vercel cron plus the GitHub Action (`.github/workflows/slack-poll.yml`) are backups only. Search looks back two days, so a missed `@pocketedge` is picked up on the next scan instead of being skipped by a stale cursor.
 
@@ -18,7 +18,7 @@ Telegram and Slack stay separate. A Slack question is answered in that Slack thr
 
 - **Event Subscriptions** (optional backup) → Request URL: `https://equity-research-ivory.vercel.app/api/slack/events`
 - Subscribe to bot events: `app_mention`, `message.channels`, `message.groups`, `message.im`, `message.mpim`
-- Bot token scopes (optional): `app_mentions:read`, `chat:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `files:read`, `files:write`, `users:read`, `reactions:write`
+- Bot token scopes (**required for artifacts**): `app_mentions:read`, `chat:write`, `files:read`, `files:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `users:read`, `reactions:write`
 
 ---
 
