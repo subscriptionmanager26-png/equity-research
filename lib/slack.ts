@@ -35,7 +35,10 @@ async function resolveSlackReplyClient(teamId?: string) {
   return getSlackReplyClient();
 }
 
-async function resolveSlackReadClient(teamId?: string) {
+async function resolveSlackReadClient(teamId?: string, channelType?: string) {
+  const cfg = getConfig();
+  const botDm = channelType === "im" || channelType === "mpim";
+
   if (teamId) {
     const token = await getSlackInstallBotToken(teamId);
     if (token) {
@@ -47,6 +50,14 @@ async function resolveSlackReadClient(teamId?: string) {
       return client;
     }
   }
+
+  // Bot DMs and Events API traffic must use the bot token — the user token
+  // cannot read another member's 1:1 with the app (channel_not_found).
+  if ((botDm || teamId) && cfg.slackBotToken) {
+    botClient ??= new WebClient(cfg.slackBotToken);
+    return botClient;
+  }
+
   return getSlackReadClient();
 }
 
@@ -222,8 +233,11 @@ export async function resolveSlackThreadAnchor(
   channelId: string,
   messageTs: string,
   teamId?: string,
+  channelType?: string,
 ) {
-  const result = await (await resolveSlackReadClient(teamId)).conversations.replies({
+  const result = await (
+    await resolveSlackReadClient(teamId, channelType)
+  ).conversations.replies({
     channel: channelId,
     ts: messageTs,
     limit: 1,
@@ -240,6 +254,9 @@ export async function enrichSlackThreadTs(
   teamId?: string,
 ): Promise<SlackInboundEvent> {
   if (event.thread_ts && event.thread_ts !== event.ts) return event;
+  if (event.channel_type === "im" || event.channel_type === "mpim") {
+    return event;
+  }
 
   const fromPermalink = parseThreadTsFromPermalink(event.permalink);
   if (fromPermalink && fromPermalink !== event.ts) {
@@ -250,6 +267,7 @@ export async function enrichSlackThreadTs(
     event.channel,
     event.ts,
     teamId ?? event.team,
+    event.channel_type,
   ).catch(() => undefined);
   if (anchor && anchor !== event.ts) {
     return { ...event, thread_ts: anchor };
@@ -263,9 +281,10 @@ export async function fetchThreadContext(input: {
   excludeTs?: string;
   limit?: number;
   teamId?: string;
+  channelType?: string;
 }) {
   const result = await (
-    await resolveSlackReadClient(input.teamId)
+    await resolveSlackReadClient(input.teamId, input.channelType)
   ).conversations.replies({
     channel: input.channelId,
     ts: input.threadTs,

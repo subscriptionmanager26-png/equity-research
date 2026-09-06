@@ -179,6 +179,7 @@ async function handleMention(
     threadTs,
     excludeTs: event.ts,
     teamId: ctx.teamId || undefined,
+    channelType: event.channel_type,
   });
 
   if (!text && files.length === 0) {
@@ -271,6 +272,7 @@ async function handleThreadMessage(
     threadTs,
     excludeTs: event.ts,
     teamId: ctx.teamId || undefined,
+    channelType: event.channel_type,
   });
 
   const prompt =
