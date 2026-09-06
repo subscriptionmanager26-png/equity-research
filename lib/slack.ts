@@ -5,12 +5,50 @@ import { WebClient } from "@slack/web-api";
 import { markdownToSlackMrkdwn } from "@/lib/chat-markup";
 import { getConfig } from "@/lib/config";
 import { markSlackMessageProcessed } from "@/lib/jobs";
+import { getSlackInstall, getSlackInstallBotToken } from "@/lib/slack-install";
 import { parseThreadTsFromPermalink } from "@/lib/slack-search";
 import { updateStore } from "@/lib/store";
 import type { JobFile, SlackInboundEvent } from "@/lib/types";
 
 let botClient: WebClient | undefined;
 let userClient: WebClient | undefined;
+const teamReplyClients = new Map<string, WebClient>();
+const teamReadClients = new Map<string, WebClient>();
+
+export type SlackTeamContext = {
+  teamId?: string;
+  mentionUserId?: string;
+};
+
+async function resolveSlackReplyClient(teamId?: string) {
+  if (teamId) {
+    const token = await getSlackInstallBotToken(teamId);
+    if (token) {
+      let client = teamReplyClients.get(teamId);
+      if (!client) {
+        client = new WebClient(token);
+        teamReplyClients.set(teamId, client);
+      }
+      return client;
+    }
+  }
+  return getSlackReplyClient();
+}
+
+async function resolveSlackReadClient(teamId?: string) {
+  if (teamId) {
+    const token = await getSlackInstallBotToken(teamId);
+    if (token) {
+      let client = teamReadClients.get(teamId);
+      if (!client) {
+        client = new WebClient(token);
+        teamReadClients.set(teamId, client);
+      }
+      return client;
+    }
+  }
+  return getSlackReadClient();
+}
 
 export function getSlackAuthToken() {
   const { slackUserToken, slackBotToken } = getConfig();
@@ -58,10 +96,14 @@ export function relayActorLabel() {
   return `@${slackTriggerWord}`;
 }
 
-export function messageTriggersRelay(text: string) {
+export function messageTriggersRelay(
+  text: string,
+  options?: { mentionUserId?: string },
+) {
   const cfg = getConfig();
   const body = text ?? "";
-  if (cfg.slackMentionUserId && body.includes(`<@${cfg.slackMentionUserId}>`)) {
+  const mentionUserId = options?.mentionUserId ?? cfg.slackMentionUserId;
+  if (mentionUserId && body.includes(`<@${mentionUserId}>`)) {
     return true;
   }
   if (/<@[A-Z0-9]+\|[^>]*pocketedge[^>]*>/i.test(body)) {
@@ -109,7 +151,19 @@ async function loadSlackIdentity(
 }
 
 /** Relay's outbound Slack identity (bot when SLACK_BOT_TOKEN is set). */
-export async function getSlackBotIdentity() {
+export async function getSlackBotIdentity(teamId?: string) {
+  if (teamId) {
+    const install = await getSlackInstall(teamId);
+    if (install) {
+      return {
+        id: install.botUserId,
+        userId: install.botUserId,
+        teamId: install.teamId,
+        name: install.teamName,
+        checkedAt: install.installedAt,
+      };
+    }
+  }
   return loadSlackIdentity(getSlackReplyClient(), "slackBot");
 }
 
@@ -167,8 +221,9 @@ export function attachmentsFromSlackEvent(
 export async function resolveSlackThreadAnchor(
   channelId: string,
   messageTs: string,
+  teamId?: string,
 ) {
-  const result = await getSlackClient().conversations.replies({
+  const result = await (await resolveSlackReadClient(teamId)).conversations.replies({
     channel: channelId,
     ts: messageTs,
     limit: 1,
@@ -182,6 +237,7 @@ export async function resolveSlackThreadAnchor(
 
 export async function enrichSlackThreadTs(
   event: SlackInboundEvent,
+  teamId?: string,
 ): Promise<SlackInboundEvent> {
   if (event.thread_ts && event.thread_ts !== event.ts) return event;
 
@@ -190,9 +246,11 @@ export async function enrichSlackThreadTs(
     return { ...event, thread_ts: fromPermalink };
   }
 
-  const anchor = await resolveSlackThreadAnchor(event.channel, event.ts).catch(
-    () => undefined,
-  );
+  const anchor = await resolveSlackThreadAnchor(
+    event.channel,
+    event.ts,
+    teamId ?? event.team,
+  ).catch(() => undefined);
   if (anchor && anchor !== event.ts) {
     return { ...event, thread_ts: anchor };
   }
@@ -204,15 +262,18 @@ export async function fetchThreadContext(input: {
   threadTs: string;
   excludeTs?: string;
   limit?: number;
+  teamId?: string;
 }) {
-  const result = await getSlackClient().conversations.replies({
+  const result = await (
+    await resolveSlackReadClient(input.teamId)
+  ).conversations.replies({
     channel: input.channelId,
     ts: input.threadTs,
     limit: input.limit ?? 50,
   });
   if (!result.ok || !result.messages?.length) return "";
 
-  const bot = await getSlackBotIdentity();
+  const bot = await getSlackBotIdentity(input.teamId);
   const lines: string[] = [];
   for (const message of result.messages) {
     if (message.ts === input.excludeTs) continue;
@@ -233,12 +294,14 @@ export async function sendSlackMessage(input: {
   channelId: string;
   text: string;
   threadTs?: string;
+  teamId?: string;
 }) {
+  const client = await resolveSlackReplyClient(input.teamId);
   const chunks = splitSlackText(markdownToSlackMrkdwn(input.text) || input.text);
   let lastTs: string | undefined;
   for (const chunk of chunks) {
     const thread = input.threadTs ? { thread_ts: input.threadTs } : {};
-    let result = await getSlackReplyClient().chat.postMessage({
+    let result = await client.chat.postMessage({
       channel: input.channelId,
       text: chunk,
       mrkdwn: true,
@@ -249,7 +312,7 @@ export async function sendSlackMessage(input: {
       ...thread,
     });
     if (!result.ok && String(result.error ?? "").includes("metadata")) {
-      result = await getSlackReplyClient().chat.postMessage({
+      result = await client.chat.postMessage({
         channel: input.channelId,
         text: chunk,
         mrkdwn: true,
@@ -276,8 +339,9 @@ export async function addSlackReaction(input: {
   channelId: string;
   timestamp: string;
   name: string;
+  teamId?: string;
 }) {
-  const result = await getSlackReplyClient().reactions.add({
+  const result = await (await resolveSlackReplyClient(input.teamId)).reactions.add({
     channel: input.channelId,
     timestamp: input.timestamp,
     name: input.name,
@@ -290,8 +354,11 @@ export async function removeSlackReaction(input: {
   channelId: string;
   timestamp: string;
   name: string;
+  teamId?: string;
 }) {
-  const result = await getSlackReplyClient().reactions.remove({
+  const result = await (
+    await resolveSlackReplyClient(input.teamId)
+  ).reactions.remove({
     channel: input.channelId,
     timestamp: input.timestamp,
     name: input.name,
@@ -301,27 +368,38 @@ export async function removeSlackReaction(input: {
 }
 
 /** 👀 — picked up, still working. */
-export async function ackSlackWorking(channelId: string, timestamp?: string) {
+export async function ackSlackWorking(
+  channelId: string,
+  timestamp?: string,
+  teamId?: string,
+) {
   if (!timestamp) return;
   await addSlackReaction({
     channelId,
     timestamp,
     name: SLACK_WORKING_REACTION,
+    teamId,
   });
 }
 
 /** Swap 👀 for 👍 when the Cursor answer is posted. */
-export async function ackSlackDone(channelId: string, timestamp?: string) {
+export async function ackSlackDone(
+  channelId: string,
+  timestamp?: string,
+  teamId?: string,
+) {
   if (!timestamp) return;
   await removeSlackReaction({
     channelId,
     timestamp,
     name: SLACK_WORKING_REACTION,
+    teamId,
   }).catch(() => undefined);
   await addSlackReaction({
     channelId,
     timestamp,
     name: SLACK_DONE_REACTION,
+    teamId,
   });
 }
 
@@ -335,7 +413,7 @@ export function slackUploadErrorDetail(error: unknown, fileName: string) {
       ? (error.data as { error?: string; needed?: string })
       : undefined;
   if (data?.error === "missing_scope" && data.needed?.includes("files")) {
-    return `${fileName}: Slack bot needs files:write (and files:read) — add under OAuth & Permissions → Bot Token Scopes, then reinstall the Pocketedge app to Prospera.`;
+    return `${fileName}: Slack bot needs files:write (and files:read) — add under OAuth & Permissions → Bot Token Scopes, then reinstall the app.`;
   }
   return error instanceof Error ? error.message : "upload failed";
 }
@@ -347,10 +425,11 @@ export async function sendSlackFile(input: {
   mime?: string;
   threadTs: string;
   title?: string;
+  teamId?: string;
 }) {
   const copy = new Uint8Array(input.bytes.byteLength);
   copy.set(input.bytes);
-  const result = await getSlackReplyClient().filesUploadV2({
+  const result = await (await resolveSlackReplyClient(input.teamId)).filesUploadV2({
     channel_id: input.channelId,
     thread_ts: input.threadTs,
     filename: input.name,

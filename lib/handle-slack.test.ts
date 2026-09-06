@@ -96,6 +96,20 @@ describe("classifySlackEvent", () => {
     );
   });
 
+  it("treats any Events API bot DM as a trigger without pocketedge", () => {
+    assert.equal(
+      classifySlackEvent({
+        type: "message",
+        text: "summarize NVDA earnings",
+        ts: "1.0",
+        channelId: "D0BOTDM",
+        channelType: "im",
+        trackedThread: false,
+      }),
+      "mention",
+    );
+  });
+
   it("ignores Relay's own posted answers", () => {
     assert.equal(
       classifySlackEvent({

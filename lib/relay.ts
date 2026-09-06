@@ -17,6 +17,7 @@ import {
   listChats,
 } from "@/lib/jobs";
 import { ackSlackDone, sendSlackFile, sendSlackMessage, slackUploadErrorDetail } from "@/lib/slack";
+import { getSlackInstall } from "@/lib/slack-install";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
 import type { Job, JobSource, TelegramChat } from "@/lib/types";
 
@@ -29,6 +30,7 @@ export async function ingestAndDispatch(input: {
   threadContext?: string;
   slackChannelId?: string;
   slackThreadTs?: string;
+  slackTeamId?: string;
   slackUserId?: string;
   slackMessageTs?: string;
   files?: Job["files"];
@@ -192,7 +194,10 @@ async function deliverSlackReply(
   formatted: FormattedDelivery,
 ): Promise<DeliveryResult> {
   const cfg = getConfig();
-  if (!cfg.slackConfigured || !job.slackChannelId || !job.slackThreadTs) {
+  const teamId = job.slackTeamId;
+  const install = teamId ? await getSlackInstall(teamId) : undefined;
+  const hasSlack = cfg.slackConfigured || Boolean(install);
+  if (!hasSlack || !job.slackChannelId || !job.slackThreadTs) {
     return { files: [] };
   }
 
@@ -203,6 +208,7 @@ async function deliverSlackReply(
     slackMessageTs = await sendSlackMessage({
       channelId: job.slackChannelId,
       threadTs: job.slackThreadTs,
+      teamId,
       text: formatted.text,
     });
   }
@@ -211,6 +217,7 @@ async function deliverSlackReply(
       await sendSlackFile({
         channelId: job.slackChannelId,
         threadTs: job.slackThreadTs,
+        teamId,
         name: file.name,
         bytes: file.bytes,
         mime: file.mime,
@@ -228,6 +235,7 @@ async function deliverSlackReply(
     await sendSlackMessage({
       channelId: job.slackChannelId,
       threadTs: job.slackThreadTs,
+      teamId,
       text: `Could not attach file(s): ${uploadErrors.join("; ")}`,
     }).catch(() => undefined);
   }
@@ -235,6 +243,7 @@ async function deliverSlackReply(
   await ackSlackDone(
     job.slackChannelId,
     job.slackMessageTs ?? job.slackThreadTs,
+    teamId,
   ).catch((error) => {
     console.error("[relay] Slack done reaction failed", error);
   });
@@ -252,6 +261,7 @@ async function notifyJobFailure(job: Job, text: string) {
     await sendSlackMessage({
       channelId: job.slackChannelId,
       threadTs: job.slackThreadTs,
+      teamId: job.slackTeamId,
       text,
     }).catch(() => undefined);
     return;

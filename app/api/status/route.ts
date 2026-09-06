@@ -6,6 +6,7 @@ import { publicStatus } from "@/lib/config";
 import { getStore } from "@/lib/store";
 import { replyUrl } from "@/lib/cursor";
 import { maybeStartSlackPollChain } from "@/lib/slack-user-poller";
+import { listSlackInstalls } from "@/lib/slack-install";
 
 export async function GET() {
   void maybeStartSlackPollChain().catch((error) => {
@@ -14,9 +15,16 @@ export async function GET() {
   try {
     const store = await getStore();
     const status = publicStatus();
+    const slackInstalls = await listSlackInstalls().catch(() => []);
     return NextResponse.json({
       ...status,
       replyUrl: replyUrl(),
+      slackInstallCount: slackInstalls.length,
+      slackInstalls: slackInstalls.map((install) => ({
+        teamId: install.teamId,
+        teamName: install.teamName,
+        installedAt: install.installedAt,
+      })),
       slackEventsPath: "/api/slack/events",
       bot: store.bot
         ? {

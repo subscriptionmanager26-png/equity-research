@@ -1,26 +1,15 @@
 display_information:
-  name: Relay
-  description: Send equity-research questions to a Cursor cloud agent and get the answer in-thread.
+  name: Pocketedge
+  description: Mention @Pocketedge in Slack to run a Cursor cloud agent and get answers in-thread.
   background_color: "#0f172a"
 features:
   bot_user:
-    display_name: Relay
+    display_name: Pocketedge
     always_online: true
 oauth_config:
+  redirect_urls:
+    - https://YOUR_PUBLIC_URL/api/slack/oauth/callback
   scopes:
-    user:
-      - search:read
-      - channels:history
-      - groups:history
-      - im:history
-      - im:read
-      - mpim:history
-      - channels:read
-      - groups:read
-      - chat:write
-      - files:write
-      - users:read
-      - reactions:write
     bot:
       - app_mentions:read
       - chat:write
@@ -32,16 +21,19 @@ oauth_config:
       - files:write
       - users:read
       - reactions:write
-      - channels:join
+      - channels:read
+      - groups:read
+      - im:read
 settings:
   event_subscriptions:
-    request_url: https://equity-research-ivory.vercel.app/api/slack/events
+    request_url: https://YOUR_PUBLIC_URL/api/slack/events
     bot_events:
       - app_mention
       - message.channels
       - message.groups
       - message.im
       - message.mpim
+      - app_uninstalled
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false

@@ -5,6 +5,7 @@ import { getConfig } from "@/lib/config";
 import { watchDispatchedJob } from "@/lib/cursor-wait";
 import { handleSlackEvent } from "@/lib/handle-slack";
 import { getJob, markSlackEventProcessed } from "@/lib/jobs";
+import { deactivateSlackInstall } from "@/lib/slack-install";
 import { verifySlackSignature } from "@/lib/slack";
 import { kickSlackMentionScan } from "@/lib/slack-user-poller";
 import type { SlackInboundEvent } from "@/lib/types";
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
   let payload: {
     type?: string;
     challenge?: string;
+    team_id?: string;
     event?: SlackInboundEvent;
     event_id?: string;
   };
@@ -45,6 +47,15 @@ export async function POST(request: Request) {
     }
   }
 
+  const teamId = payload.team_id;
+
+  if (payload.event?.type === "app_uninstalled" && teamId) {
+    await deactivateSlackInstall(teamId).catch((error) => {
+      console.error("[relay] Slack app_uninstalled cleanup failed", error);
+    });
+    return NextResponse.json({ ok: true });
+  }
+
   if (payload.event) {
     if (payload.event_id) {
       const fresh = await markSlackEventProcessed(payload.event_id);
@@ -52,7 +63,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, duplicate: true });
       }
     }
-    const result = await handleSlackEvent(payload.event).catch((error) => {
+    const event = { ...payload.event, team: teamId ?? payload.event.team };
+    console.info(
+      `[relay] Slack event ${event.type} channel=${event.channel} channel_type=${event.channel_type ?? "unknown"} user=${event.user ?? "none"}`,
+    );
+    const result = await handleSlackEvent(event, { teamId }).catch((error) => {
       console.error("[relay] Slack webhook event failed", error);
       return undefined;
     });

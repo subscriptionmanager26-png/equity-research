@@ -19,7 +19,9 @@ import {
   sendSlackMessage,
   shouldIgnoreSlackSubtype,
   stripSlackMentions,
+  type SlackTeamContext,
 } from "@/lib/slack";
+import { getSlackInstall } from "@/lib/slack-install";
 import type { SlackInboundEvent } from "@/lib/types";
 
 export const RELAY_SLACK_METADATA_TYPE = "relay_delivery";
@@ -40,22 +42,35 @@ export function isRelaySlackOutbound(event: {
   return false;
 }
 
+export function isSlackBotDirectMessage(channelType?: string) {
+  return channelType === "im" || channelType === "mpim";
+}
+
 export function classifySlackEvent(input: {
   type: string;
   text?: string;
   ts: string;
   thread_ts?: string;
   channelId?: string;
+  channelType?: string;
   trackedThread: boolean;
   relayOutbound?: boolean;
+  mentionUserId?: string;
 }) {
   if (input.relayOutbound) return "ignore" as const;
   if (input.type !== "app_mention" && input.type !== "message") {
     return "ignore" as const;
   }
+  const inBotDm = isSlackBotDirectMessage(input.channelType);
   const addressed =
-    input.type === "app_mention" || messageTriggersRelay(input.text ?? "");
-  const inDm = Boolean(input.channelId?.startsWith("D"));
+    input.type === "app_mention" ||
+    inBotDm ||
+    messageTriggersRelay(input.text ?? "", {
+      mentionUserId: input.mentionUserId,
+    });
+  const inDm = Boolean(
+    input.channelId?.startsWith("D") || input.channelType === "im",
+  );
   if (isSlackThreadReply(input) && input.trackedThread) {
     if (addressed) return "follow_up" as const;
     // DMs with you are a private thread; channels are shared — don't hijack chatter.
@@ -79,18 +94,41 @@ async function resolveTrackedThread(channelId: string, threadTs: string) {
   };
 }
 
-export async function handleSlackEvent(event: SlackInboundEvent) {
+async function resolveSlackTeamContext(
+  event: SlackInboundEvent,
+  options?: SlackTeamContext,
+): Promise<Required<Pick<SlackTeamContext, "teamId">> & SlackTeamContext> {
+  const teamId = options?.teamId ?? event.team ?? "";
+  let mentionUserId = options?.mentionUserId;
+  if (teamId && !mentionUserId) {
+    const install = await getSlackInstall(teamId);
+    mentionUserId = install?.botUserId;
+  }
+  return { teamId, mentionUserId };
+}
+
+export async function handleSlackEvent(
+  event: SlackInboundEvent,
+  options?: SlackTeamContext,
+) {
+  const ctx = await resolveSlackTeamContext(event, options);
   if (event.type !== "app_mention" && event.type !== "message") {
     return { ignored: true, reason: event.type };
+  }
+  if (shouldIgnoreSlackSubtype(event.subtype)) {
+    return { ignored: true, reason: event.subtype ?? "subtype" };
   }
   if (isRelaySlackOutbound(event)) {
     return { ignored: true, reason: "relay_outbound" };
   }
-  if (!(await markSlackMessageProcessed(`${event.channel}:${event.ts}`))) {
+  const dedupeKey = ctx.teamId
+    ? `${ctx.teamId}:${event.channel}:${event.ts}`
+    : `${event.channel}:${event.ts}`;
+  if (!(await markSlackMessageProcessed(dedupeKey))) {
     return { ignored: true, reason: "duplicate_message" };
   }
 
-  const enriched = await enrichSlackThreadTs(event);
+  const enriched = await enrichSlackThreadTs(event, ctx.teamId || undefined);
   const threadTs = isSlackThreadReply(enriched) ? enriched.thread_ts : undefined;
   const tracked = threadTs
     ? await resolveTrackedThread(enriched.channel, threadTs)
@@ -101,21 +139,29 @@ export async function handleSlackEvent(event: SlackInboundEvent) {
     ts: enriched.ts,
     thread_ts: enriched.thread_ts,
     channelId: enriched.channel,
+    channelType: enriched.channel_type,
     trackedThread: Boolean(tracked),
     relayOutbound: false,
+    mentionUserId: ctx.mentionUserId,
   });
 
   if (intent === "follow_up") {
-    return handleThreadMessage(enriched);
+    return handleThreadMessage(enriched, ctx);
   }
   if (intent === "mention") {
-    return handleMention(enriched);
+    return handleMention(enriched, ctx);
   }
+  console.info(
+    `[relay] Slack event ignored (${enriched.channel}${enriched.channel_type ? `:${enriched.channel_type}` : ""}): not_pocketedge — ${(enriched.text ?? "").slice(0, 80)}`,
+  );
   return { ignored: true, reason: "not_pocketedge" };
 }
 
-async function handleMention(event: SlackInboundEvent) {
-  const bot = await getSlackBotIdentity();
+async function handleMention(
+  event: SlackInboundEvent,
+  ctx: SlackTeamContext & { teamId: string },
+) {
+  const bot = await getSlackBotIdentity(ctx.teamId || undefined);
   if (isSlackBotMessage(event, bot.userId)) {
     return { ignored: true, reason: "bot_message" };
   }
@@ -132,12 +178,14 @@ async function handleMention(event: SlackInboundEvent) {
     channelId: event.channel,
     threadTs,
     excludeTs: event.ts,
+    teamId: ctx.teamId || undefined,
   });
 
   if (!text && files.length === 0) {
     await sendSlackMessage({
       channelId: event.channel,
       threadTs,
+      teamId: ctx.teamId || undefined,
       text: "Mention @pocketedge with a question, or attach a file in the same message.",
     }).catch(() => undefined);
     return { ignored: true, reason: "empty" };
@@ -152,9 +200,11 @@ async function handleMention(event: SlackInboundEvent) {
     threadTs,
   });
 
-  await ackSlackWorking(event.channel, event.ts).catch((error) => {
+  await ackSlackWorking(event.channel, event.ts, ctx.teamId || undefined).catch(
+    (error) => {
     console.error("[relay] Slack working reaction failed", error);
-  });
+  },
+  );
 
   const tracked = await resolveTrackedThread(event.channel, threadTs);
   const prior = tracked?.lastJobId ? await getJob(tracked.lastJobId) : undefined;
@@ -168,6 +218,7 @@ async function handleMention(event: SlackInboundEvent) {
       username: event.user,
       slackChannelId: event.channel,
       slackThreadTs: threadTs,
+      slackTeamId: ctx.teamId || undefined,
       slackUserId: event.user,
       slackMessageTs: event.ts,
       files,
@@ -179,18 +230,22 @@ async function handleMention(event: SlackInboundEvent) {
     await sendSlackMessage({
       channelId: event.channel,
       threadTs,
+      teamId: ctx.teamId || undefined,
       text: `Something went wrong before I could reach Cursor: ${detail}`,
     }).catch(() => undefined);
     return { error: detail };
   }
 }
 
-async function handleThreadMessage(event: SlackInboundEvent) {
+async function handleThreadMessage(
+  event: SlackInboundEvent,
+  ctx: SlackTeamContext & { teamId: string },
+) {
   if (shouldIgnoreSlackSubtype(event.subtype)) {
     return { ignored: true, reason: event.subtype ?? "subtype" };
   }
 
-  const bot = await getSlackBotIdentity();
+  const bot = await getSlackBotIdentity(ctx.teamId || undefined);
   if (isSlackBotMessage(event, bot.userId)) {
     return { ignored: true, reason: "bot_message" };
   }
@@ -215,15 +270,18 @@ async function handleThreadMessage(event: SlackInboundEvent) {
     channelId: event.channel,
     threadTs,
     excludeTs: event.ts,
+    teamId: ctx.teamId || undefined,
   });
 
   const prompt =
     text ||
     `Process the attached file${files.length === 1 ? "" : "s"} and follow any implied request.`;
 
-  await ackSlackWorking(event.channel, event.ts).catch((error) => {
+  await ackSlackWorking(event.channel, event.ts, ctx.teamId || undefined).catch(
+    (error) => {
     console.error("[relay] Slack working reaction failed", error);
-  });
+  },
+  );
 
   try {
     const prior = tracked.lastJobId ? await getJob(tracked.lastJobId) : undefined;
@@ -235,6 +293,7 @@ async function handleThreadMessage(event: SlackInboundEvent) {
       username: event.user,
       slackChannelId: event.channel,
       slackThreadTs: threadTs,
+      slackTeamId: ctx.teamId || undefined,
       slackUserId: event.user,
       slackMessageTs: event.ts,
       files,
@@ -246,6 +305,7 @@ async function handleThreadMessage(event: SlackInboundEvent) {
     await sendSlackMessage({
       channelId: event.channel,
       threadTs,
+      teamId: ctx.teamId || undefined,
       text: `Something went wrong before I could reach Cursor: ${detail}`,
     }).catch(() => undefined);
     return { error: detail };

@@ -29,6 +29,8 @@ export function getConfig() {
   const slackUserToken = trim(process.env.SLACK_USER_TOKEN);
   const slackAppToken = trim(process.env.SLACK_APP_TOKEN);
   const slackSigningSecret = trim(process.env.SLACK_SIGNING_SECRET);
+  const slackClientId = trim(process.env.SLACK_CLIENT_ID);
+  const slackClientSecret = trim(process.env.SLACK_CLIENT_SECRET);
   const slackTriggerWord = trim(process.env.SLACK_TRIGGER_WORD) || "pocketedge";
   const slackMentionUserId = trim(process.env.SLACK_MENTION_USER_ID);
   const slackChannelIds = trim(process.env.SLACK_CHANNEL_IDS)
@@ -52,6 +54,8 @@ export function getConfig() {
     slackUserToken,
     slackAppToken,
     slackSigningSecret,
+    slackClientId,
+    slackClientSecret,
     slackTriggerWord,
     slackMentionUserId,
     slackChannelIds,
@@ -66,6 +70,9 @@ export function getConfig() {
     slackReplyAsUser: Boolean(slackUserToken) && !slackBotToken,
     slackSocketConfigured: Boolean(
       slackBotToken && slackAppToken && !slackUserToken,
+    ),
+    slackOAuthConfigured: Boolean(
+      slackClientId && slackClientSecret && publicUrl,
     ),
     replyConfigured: Boolean(replyWebhookSecret),
     cursorStatusConfigured: Boolean(publicUrl && cursorStatusWebhookSecret),
@@ -90,6 +97,9 @@ export function publicStatus() {
     slackReplyAsUser: cfg.slackReplyAsUser,
     slackReplyAsBot: cfg.slackReplyAsBot,
     slackTriggerWord: cfg.slackTriggerWord,
+    slackOAuthConfigured: cfg.slackOAuthConfigured,
+    slackInstallPath: "/api/slack/oauth",
+    slackOAuthCallbackPath: "/api/slack/oauth/callback",
     replyConfigured: cfg.replyConfigured,
     publicUrlSet: Boolean(cfg.publicUrl),
     telegramChatIdSet: Boolean(cfg.telegramChatId),

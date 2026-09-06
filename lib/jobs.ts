@@ -27,6 +27,7 @@ export async function createJob(input: {
   displayName?: string;
   slackChannelId?: string;
   slackThreadTs?: string;
+  slackTeamId?: string;
   slackUserId?: string;
   slackMessageTs?: string;
   threadContext?: string;
@@ -46,6 +47,7 @@ export async function createJob(input: {
     displayName: input.displayName,
     slackChannelId: input.slackChannelId,
     slackThreadTs: input.slackThreadTs,
+    slackTeamId: input.slackTeamId,
     slackUserId: input.slackUserId,
     slackMessageTs: input.slackMessageTs,
     threadContext: input.threadContext,

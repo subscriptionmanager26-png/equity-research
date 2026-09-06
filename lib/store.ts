@@ -58,7 +58,7 @@ function kvEnabled() {
 
 let redisClient: import("@upstash/redis").Redis | undefined;
 
-async function getRedis() {
+export async function getRedis() {
   const creds = redisCredentials();
   if (!creds) throw new Error("Upstash Redis is not configured");
   if (!redisClient) {

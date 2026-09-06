@@ -47,6 +47,7 @@ export type Job = {
   displayName?: string;
   slackChannelId?: string;
   slackThreadTs?: string;
+  slackTeamId?: string;
   slackUserId?: string;
   slackMessageTs?: string;
   prompt: string;
@@ -123,14 +124,28 @@ export type InboundMessage = {
   files?: string[];
 };
 
+export type SlackWorkspaceInstall = {
+  teamId: string;
+  teamName?: string;
+  botTokenEnc: string;
+  botUserId: string;
+  installedByUserId?: string;
+  scopes?: string[];
+  installedAt: string;
+  isActive: boolean;
+  uninstalledAt?: string;
+};
+
 export type SlackInboundEvent = {
   type: string;
+  team?: string;
   user?: string;
   text?: string;
   ts: string;
   thread_ts?: string;
   permalink?: string;
   channel: string;
+  channel_type?: string;
   bot_id?: string;
   subtype?: string;
   metadata?: { event_type?: string };
