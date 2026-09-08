@@ -13,6 +13,7 @@ import {
   slackTsInLookback,
 } from "@/lib/slack-search";
 import { acquireSlackPollChainSlot, getStore, isSlackInboundMessageProcessed, releaseSlackPollChainSlot, updateStore } from "@/lib/store";
+import { slackInboundDedupeKey } from "@/lib/slack-dedupe";
 import { scheduleSlackPollWake } from "@/lib/slack-poll-scheduler";
 import {
   getSlackHumanIdentity,
@@ -446,7 +447,9 @@ async function processMessage(
   jobIds: string[] = [],
   ctx?: SlackPollCtx,
 ) {
-  const messageKey = `${event.channel}:${event.ts}`;
+  const store = await getStore();
+  const teamId = event.team ?? store.slackBot?.teamId;
+  const messageKey = slackInboundDedupeKey(event.channel, event.ts, teamId);
   if (ctx?.processed.has(messageKey)) return;
 
   if (isRelaySlackOutbound(event)) return;
@@ -472,7 +475,7 @@ async function processMessage(
     `[relay] Slack ${isSlackThreadReply(event) ? "thread reply" : "trigger"} in ${event.channel}: ${(event.text ?? "").slice(0, 80)}`,
   );
 
-  const result = await handleSlackEvent(event).catch((error) => {
+  const result = await handleSlackEvent(event, { teamId }).catch((error) => {
     console.error("[relay] Slack message handler failed", error);
     return undefined;
   });

@@ -7,7 +7,6 @@ import { handleSlackEvent } from "@/lib/handle-slack";
 import { getJob, markSlackEventProcessed } from "@/lib/jobs";
 import { deactivateSlackInstall } from "@/lib/slack-install";
 import { verifySlackSignature } from "@/lib/slack";
-import { kickSlackMentionScan } from "@/lib/slack-user-poller";
 import type { SlackInboundEvent } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -82,10 +81,6 @@ export async function POST(request: Request) {
       }
     }
   }
-
-  continueAfterResponse(async () => {
-    await kickSlackMentionScan();
-  });
 
   return NextResponse.json({ ok: true });
 }

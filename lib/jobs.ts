@@ -175,6 +175,20 @@ export function findSlackThreadJob(
   );
 }
 
+export function findJobForSlackInbound(
+  jobs: Job[],
+  channelId: string,
+  messageTs: string,
+) {
+  return jobs.find(
+    (job) =>
+      job.source === "slack" &&
+      job.slackChannelId === channelId &&
+      job.slackMessageTs === messageTs &&
+      job.status !== "error",
+  );
+}
+
 export function findTelegramFollowUpJob(
   jobs: Job[],
   chatId: number,

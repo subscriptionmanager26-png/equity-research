@@ -2,12 +2,14 @@ import { ingestAndDispatch } from "@/lib/relay";
 import { getConfig } from "@/lib/config";
 import {
   findSlackThreadJob,
+  findJobForSlackInbound,
   getJob,
   getSlackThread,
   listJobs,
   markSlackMessageProcessed,
   rememberSlackThread,
 } from "@/lib/jobs";
+import { slackInboundDedupeKey } from "@/lib/slack-dedupe";
 import {
   attachmentsFromSlackEvent,
   enrichSlackThreadTs,
@@ -121,14 +123,26 @@ export async function handleSlackEvent(
   if (isRelaySlackOutbound(event)) {
     return { ignored: true, reason: "relay_outbound" };
   }
-  const dedupeKey = ctx.teamId
-    ? `${ctx.teamId}:${event.channel}:${event.ts}`
-    : `${event.channel}:${event.ts}`;
+  const teamId = ctx.teamId || event.team || "";
+  const dedupeKey = slackInboundDedupeKey(
+    event.channel,
+    event.ts,
+    teamId || undefined,
+  );
   if (!(await markSlackMessageProcessed(dedupeKey))) {
     return { ignored: true, reason: "duplicate_message" };
   }
 
-  const enriched = await enrichSlackThreadTs(event, ctx.teamId || undefined);
+  const existingJob = findJobForSlackInbound(
+    await listJobs(),
+    event.channel,
+    event.ts,
+  );
+  if (existingJob) {
+    return { ignored: true, reason: "already_jobbed", jobId: existingJob.id };
+  }
+
+  const enriched = await enrichSlackThreadTs(event, teamId || undefined);
   const threadTs = isSlackThreadReply(enriched) ? enriched.thread_ts : undefined;
   const tracked = threadTs
     ? await resolveTrackedThread(enriched.channel, threadTs)
