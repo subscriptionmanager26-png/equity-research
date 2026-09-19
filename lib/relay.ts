@@ -58,6 +58,11 @@ export async function ingestAndDispatch(input: {
       (input.source === "dashboard" ? fallback?.displayName : undefined),
   });
 
+  return completeJobDispatch(job);
+}
+
+/** Dispatch a newly created job to Cursor (or retry a stale queued job). */
+export async function completeJobDispatch(job: Job): Promise<Job> {
   try {
     const result = await dispatchToCursor(job);
     if (!result.ok) {

@@ -193,17 +193,27 @@ export async function dispatchToCursor(job: Job) {
   const body = await buildCloudAgentBody(job);
   const existingId = job.followUpAgentId?.trim() || standingAgentId();
   if (existingId) {
-    let last = await cursorPost(`/v0/agents/${existingId}/followup`, {
-      prompt: { text: (body.prompt as { text: string }).text },
-    });
-    for (let attempt = 0; !last.ok && isBusyError(last.body) && attempt < 8; attempt++) {
+    const promptText = (body.prompt as { text: string }).text;
+    const followup = () =>
+      cursorPost(`/v0/agents/${existingId}/followup`, {
+        prompt: { text: promptText },
+      });
+    // Stay within serverless maxDuration (~60s): cap total busy-wait time.
+    const deadline = Date.now() + 45_000;
+    let last = await followup();
+    for (
+      let attempt = 0;
+      !last.ok &&
+      isBusyError(last.body) &&
+      attempt < 4 &&
+      Date.now() < deadline;
+      attempt++
+    ) {
       console.info(
         `[relay] Standing agent ${existingId} busy; retry ${attempt + 1}`,
       );
       await sleep(2000);
-      last = await cursorPost(`/v0/agents/${existingId}/followup`, {
-        prompt: { text: (body.prompt as { text: string }).text },
-      });
+      last = await followup();
     }
     if (last.ok) {
       return {
