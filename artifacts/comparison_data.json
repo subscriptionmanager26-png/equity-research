@@ -1,0 +1,182 @@
+{
+  "_manifest_version": "1.0",
+  "as_of": "2026-09-21",
+  "regime": "India (BSE/NSE, Consolidated)",
+  "sector": "Capital Markets Infrastructure & Broking",
+  "macro": {
+    "wacc": "12.5%",
+    "terminal_growth": "5.0%",
+    "valuation_blend": "Multiples 50% + DCF 30% + RIM 20%"
+  },
+  "stocks": [
+    {
+      "ticker": "BSE",
+      "name": "BSE Ltd",
+      "nse": "BSE",
+      "bse_code": "539784",
+      "business": "Exchange + clearing + MF platform (StAR MF); derivatives-led revenue surge",
+      "price": 3161,
+      "mcap_cr": 128932,
+      "pe_ttm": 45.5,
+      "pb": 19.3,
+      "div_yield_pct": 0.32,
+      "roe_pct": 46.0,
+      "roce_pct": 60.0,
+      "52w_high": 4447,
+      "52w_low": 2022,
+      "fy26_revenue_cr": 5124,
+      "fy26_pat_cr": 2487,
+      "ttm_eps": 69.55,
+      "cfo_ni": 1.08,
+      "debt": "Near zero",
+      "fii_pct": 21.32,
+      "technical": {
+        "trend": "Bearish short-term (below 20/50/200 DMA)",
+        "rsi": 43.7,
+        "support": "3100-3230",
+        "resistance": "3340-3450",
+        "macd": "Negative"
+      },
+      "scenarios": {
+        "bear": {"fy27e_pat_cr": 1900, "multiple": 32, "pt": 2600, "upside_pct": -18, "prob": 20},
+        "base": {"fy27e_pat_cr": 2300, "multiple": 40, "pt": 3800, "upside_pct": 20, "prob": 55},
+        "bull": {"fy27e_pat_cr": 2700, "multiple": 45, "pt": 4500, "upside_pct": 42, "prob": 25}
+      },
+      "prob_weighted_pt": 3685,
+      "action": "HOLD",
+      "conviction": "Medium"
+    },
+    {
+      "ticker": "GROWW",
+      "name": "Billionbrains Garage Ventures (Groww)",
+      "nse": "GROWW",
+      "bse_code": "544603",
+      "business": "Digital broking (#1 NSE active clients), MF, MTF, credit, AMC",
+      "price": 191,
+      "mcap_cr": 119202,
+      "pe_ttm": 48.9,
+      "pb": 12.4,
+      "div_yield_pct": 0.0,
+      "roe_pct": 28.8,
+      "roce_pct": 37.3,
+      "52w_high": 227,
+      "52w_low": 112,
+      "fy26_revenue_cr": 4645,
+      "fy26_pat_cr": 2083,
+      "ttm_eps": 3.94,
+      "cfo_ni": 0.26,
+      "debt": "D/E 0.03",
+      "fii_pct": 6.89,
+      "technical": {
+        "trend": "Neutral; mid 52w range",
+        "rsi": 52,
+        "support": "175-185",
+        "resistance": "210-227",
+        "macd": "Flat to positive"
+      },
+      "scenarios": {
+        "bear": {"fy27e_pat_cr": 2000, "multiple": 35, "pt": 150, "upside_pct": -21, "prob": 20},
+        "base": {"fy27e_pat_cr": 2500, "multiple": 42, "pt": 235, "upside_pct": 23, "prob": 50},
+        "bull": {"fy27e_pat_cr": 2900, "multiple": 48, "pt": 300, "upside_pct": 57, "prob": 30}
+      },
+      "prob_weighted_pt": 232,
+      "action": "BUY",
+      "conviction": "Medium-High"
+    },
+    {
+      "ticker": "ANGELONE",
+      "name": "Angel One Ltd",
+      "nse": "ANGELONE",
+      "bse_code": "543235",
+      "business": "Full-stack broking, MTF/NBFC, MF distribution, wealth (Ionic)",
+      "price": 296,
+      "mcap_cr": 26988,
+      "pe_ttm": 26.2,
+      "pb": 4.4,
+      "div_yield_pct": 1.37,
+      "roe_pct": 15.6,
+      "roce_pct": 14.8,
+      "52w_high": 360,
+      "52w_low": 209,
+      "fy26_revenue_cr": 5138,
+      "fy26_pat_cr": 915,
+      "ttm_eps": 11.34,
+      "cfo_ni": -2.09,
+      "debt": "Borrowings 7951 cr (MTF book)",
+      "fii_pct": 13.76,
+      "technical": {
+        "trend": "Range-bound near lower band",
+        "rsi": 45,
+        "support": "260-280",
+        "resistance": "330-360",
+        "macd": "Weak"
+      },
+      "scenarios": {
+        "bear": {"fy27e_pat_cr": 800, "multiple": 22, "pt": 220, "upside_pct": -26, "prob": 25},
+        "base": {"fy27e_pat_cr": 1100, "multiple": 26, "pt": 310, "upside_pct": 5, "prob": 50},
+        "bull": {"fy27e_pat_cr": 1400, "multiple": 30, "pt": 420, "upside_pct": 42, "prob": 25}
+      },
+      "prob_weighted_pt": 305,
+      "action": "HOLD",
+      "conviction": "Medium"
+    },
+    {
+      "ticker": "CDSL",
+      "name": "Central Depository Services (India) Ltd",
+      "nse": "CDSL",
+      "bse_code": "532927",
+      "business": "Market infrastructure — demat, KYC (CVL), e-voting, issuer charges",
+      "price": 1361,
+      "mcap_cr": 28445,
+      "pe_ttm": 60.4,
+      "pb": 14.5,
+      "div_yield_pct": 0.94,
+      "roe_pct": 24.5,
+      "roce_pct": 32.0,
+      "52w_high": 1674,
+      "52w_low": 1116,
+      "fy26_revenue_cr": 1145,
+      "fy26_pat_cr": 455,
+      "ttm_eps": 22.55,
+      "cfo_ni": 1.07,
+      "debt": "Near zero",
+      "fii_pct": 8.24,
+      "technical": {
+        "trend": "Consolidation after FY26 slowdown",
+        "rsi": 48,
+        "support": "1250-1300",
+        "resistance": "1450-1500",
+        "macd": "Neutral"
+      },
+      "scenarios": {
+        "bear": {"fy27e_pat_cr": 420, "multiple": 38, "pt": 1050, "upside_pct": -23, "prob": 20},
+        "base": {"fy27e_pat_cr": 520, "multiple": 42, "pt": 1350, "upside_pct": -1, "prob": 55},
+        "bull": {"fy27e_pat_cr": 580, "multiple": 48, "pt": 1620, "upside_pct": 19, "prob": 25}
+      },
+      "prob_weighted_pt": 1335,
+      "action": "HOLD",
+      "conviction": "Low-Medium"
+    }
+  ],
+  "ranking": {
+    "fundamental_quality": ["BSE", "GROWW", "CDSL", "ANGELONE"],
+    "growth": ["GROWW", "BSE", "CDSL", "ANGELONE"],
+    "valuation_cheapness": ["ANGELONE", "GROWW", "BSE", "CDSL"],
+    "risk_adjusted_12m": ["GROWW", "BSE", "ANGELONE", "CDSL"]
+  },
+  "retail_forum": {
+    "groww_thread": "https://forum.valuepickr.com/t/groww-billionbrains-garage-ventures/223611",
+    "groww_consensus": "Largest active-client base + adjacency optionality (AMC, credit, wealth); premium to Angel One justified if share gains persist.",
+    "groww_counter": "Valuation embeds perfection; Zerodha/Angel can replicate adjacencies; F&O regulatory risk.",
+    "bse_coverage": "Partial — discussed in exchange/MII threads on ValuePickr and Capitalmind",
+    "cdsl_coverage": "Moderate — MII recovery thesis on Trendlyne/MoneyControl"
+  },
+  "sources": [
+    "Screener.in consolidated financials (accessed 21 Sep 2026)",
+    "Groww Annual Report FY25-26",
+    "HSIE broker note CDSL (15 Sep 2026, TP Rs 1,620)",
+    "JM Financial / MOFSL Groww coverage (Jul 2026, TP Rs 250)",
+    "ValuePickr GROWW thread",
+    "MarketsMojo / Anand Rathi technical levels for BSE"
+  ]
+}
