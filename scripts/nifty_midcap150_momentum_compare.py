@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Compare Nifty Midcap 150 Momentum 50 direct-growth index funds."""
+"""Compare Nifty Midcap 150 Momentum 50 and related momentum funds (index + active)."""
 
 from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,25 +15,40 @@ import statsmodels.api as sm
 from indiafactorlibrary import IndiaFactorLibrary
 
 MFAPI_BASE = "https://api.mfapi.in/mf"
-FUNDS = {
-    150738: "Tata Nifty Midcap 150 Momentum 50 Index Fund - Direct Growth",
-    150902: "Edelweiss Nifty Midcap150 Momentum 50 Index Fund - Direct Growth",
-    152916: "Kotak Nifty Midcap 150 Momentum 50 Index Fund - Direct Growth",
-    154526: "SBI Nifty Midcap 150 Momentum 50 ETF FoF - Direct Growth",
+
+# scheme_code -> (short name, category)
+FUNDS: dict[int, tuple[str, str]] = {
+    150738: ("Tata Nifty Midcap 150 Momentum 50 Index", "index"),
+    150902: ("Edelweiss Nifty Midcap 150 Momentum 50 Index", "index"),
+    152916: ("Kotak Nifty Midcap 150 Momentum 50 Index", "index"),
+    154526: ("SBI Nifty Midcap 150 Momentum 50 ETF FoF", "fof"),
+    153684: ("ICICI Pru Active Momentum", "active"),
+    153364: ("Motilal Oswal Active Momentum", "active"),
+    153083: ("Axis Momentum", "active"),
+    152189: ("quant Momentum", "active"),
+    153753: ("Kotak Active Momentum", "active"),
+    154474: ("Mirae BSE Midcap 150 Momentum 30 FoF", "adjacent"),
+    154377: ("Motilal Oswal BSE Midcap 150 Momentum 30 Index", "adjacent"),
+    152645: ("Mirae MidSmallcap400 MQ 100 FoF", "adjacent"),
+    153272: ("UTI MidSmallcap400 MQ 100 Index", "adjacent"),
+    152985: ("Edelweiss Nifty500 Multicap MQ 50 Index", "adjacent"),
 }
 
+INDEX_BENCHMARK_CODES = {150738, 150902, 152916}
 TER_ANNUAL = {
     150738: 0.0039,
     150902: 0.0045,
     152916: 0.0028,
     154526: 0.0025,
 }
+MIN_HISTORY_MONTHS = 11
 
 
 @dataclass
 class FundMetrics:
     scheme_code: int
     name: str
+    category: str
     sharpe_window: str
     sharpe: float
     ann_return_pct: float
@@ -49,6 +63,7 @@ class FundMetrics:
     info_ratio: float
     history_months: float
     obs_months_ff: int
+    composite_score: float = 0.0
 
 
 def parse_mfapi_date(s: str) -> pd.Timestamp:
@@ -71,20 +86,16 @@ def load_ff6_monthly() -> pd.DataFrame:
     ff6 = IndiaFactorLibrary().read("ff6")
     monthly = ff6[0].copy()
     monthly.index = pd.to_datetime(monthly.index)
-    monthly = monthly.sort_index()
-    return monthly
-
-
-def month_end_nav(nav: pd.Series) -> pd.Series:
-    return nav.resample("ME").last().dropna()
+    return monthly.sort_index()
 
 
 def monthly_returns(nav: pd.Series) -> pd.Series:
-    me = month_end_nav(nav)
-    return me.pct_change().dropna()
+    return nav.resample("ME").last().dropna().pct_change().dropna()
 
 
-def sharpe_ratio(daily_nav: pd.Series, rf_monthly: pd.Series, years: float) -> tuple[float, str, float, float]:
+def sharpe_ratio(
+    daily_nav: pd.Series, rf_monthly: pd.Series, years: float
+) -> tuple[float, str, float, float]:
     end = daily_nav.index.max()
     start = end - pd.DateOffset(years=int(years), months=int((years % 1) * 12))
     nav = daily_nav[daily_nav.index >= start]
@@ -124,10 +135,7 @@ def ff5_alpha(
 ) -> tuple[float, float, float, int]:
     fund = window_monthly(fund_monthly, years)
     aligned = pd.concat(
-        [
-            fund.rename("fund"),
-            factors[["MF", "SMB5", "HML", "RMW", "CMA", "WML", "RF"]],
-        ],
+        [fund.rename("fund"), factors[["MF", "SMB5", "HML", "RMW", "CMA", "WML", "RF"]]],
         axis=1,
         join="inner",
     ).dropna()
@@ -143,17 +151,12 @@ def ff5_alpha(
     return float(alpha_ann), float(model.tvalues["const"]), float(model.rsquared), len(aligned)
 
 
-def tri_proxy_benchmark(
-    monthlies: dict[int, pd.Series],
-    exclude_code: int,
-    years: float,
-) -> pd.Series:
-    """Reconstruct TRI proxy: median peer fund return + average peer TER/12."""
-    peers = {c: s for c, s in monthlies.items() if c != exclude_code and c in TER_ANNUAL}
+def fixed_tri_proxy(monthlies: dict[int, pd.Series], years: float) -> pd.Series:
+    """NIFTY Midcap 150 Momentum 50 TRI proxy from index-fund panel."""
+    peers = {c: monthlies[c] for c in INDEX_BENCHMARK_CODES if c in monthlies}
     end = max(s.index.max() for s in peers.values())
     start = end - pd.DateOffset(years=int(years), months=int((years % 1) * 12))
-    panel = pd.DataFrame(peers)
-    panel = panel.loc[panel.index >= start]
+    panel = pd.DataFrame(peers).loc[lambda df: df.index >= start]
     median_ret = panel.median(axis=1, skipna=True)
     avg_ter = float(np.mean([TER_ANNUAL[c] for c in peers]))
     return (1.0 + median_ret) * (1.0 + avg_ter / 12.0) - 1.0
@@ -170,7 +173,6 @@ def benchmark_metrics(
     if len(aligned) < 6:
         return float("nan"), float("nan"), float("nan"), float("nan")
     active = aligned["fund"] - aligned["bench"]
-    months = len(aligned)
     fund_cum = (1 + aligned["fund"]).prod() - 1
     bench_cum = (1 + aligned["bench"]).prod() - 1
     total_excess_pct = (fund_cum - bench_cum) * 100
@@ -181,6 +183,14 @@ def benchmark_metrics(
 
 def history_months(nav: pd.Series) -> float:
     return (nav.index.max() - nav.index.min()).days / 30.44
+
+
+def percentile_rank(values: list[float], x: float) -> float:
+    clean = [v for v in values if not math.isnan(v)]
+    if not clean or math.isnan(x):
+        return float("nan")
+    below = sum(1 for v in clean if v < x)
+    return below / len(clean)
 
 
 def analyze() -> dict:
@@ -195,13 +205,13 @@ def analyze() -> dict:
         monthlies[code] = monthly_returns(nav)
 
     results: list[FundMetrics] = []
-    for code, name in FUNDS.items():
+    for code, (name, category) in FUNDS.items():
         nav = navs[code]
         months_hist = history_months(nav)
         fund_monthly = monthlies[code]
-
         sharpe_years = 2.0 if months_hist >= 24 else 1.0
-        bench_monthly = tri_proxy_benchmark(monthlies, code, sharpe_years)
+        bench_monthly = fixed_tri_proxy(monthlies, sharpe_years)
+
         sharpe, window, ann_ret, ann_vol = sharpe_ratio(nav, rf_monthly, sharpe_years)
         alpha, tstat, r2, obs = ff5_alpha(fund_monthly, factors, sharpe_years)
         excess, te, ir, bench_ret = benchmark_metrics(fund_monthly, bench_monthly, sharpe_years)
@@ -211,7 +221,8 @@ def analyze() -> dict:
         results.append(
             FundMetrics(
                 scheme_code=code,
-                name=name.split(" - ")[0].replace("Nifty Midcap150", "Nifty Midcap 150"),
+                name=name,
+                category=category,
                 sharpe_window=window,
                 sharpe=sharpe,
                 ann_return_pct=ann_ret,
@@ -229,9 +240,16 @@ def analyze() -> dict:
             )
         )
 
-    eligible = [r for r in results if r.history_months >= 11 and not math.isnan(r.sharpe)]
-    eligible.sort(key=lambda r: (r.sharpe, r.ff5_alpha_ann_pct), reverse=True)
+    eligible = [r for r in results if r.history_months >= MIN_HISTORY_MONTHS and not math.isnan(r.sharpe)]
+    sharpes = [r.sharpe for r in eligible]
+    alphas = [r.ff5_alpha_ann_pct for r in eligible if not math.isnan(r.ff5_alpha_ann_pct)]
+    for r in eligible:
+        sr = percentile_rank(sharpes, r.sharpe)
+        ar = percentile_rank(alphas, r.ff5_alpha_ann_pct) if not math.isnan(r.ff5_alpha_ann_pct) else 0.0
+        r.composite_score = 0.55 * sr + 0.45 * ar
 
+    eligible.sort(key=lambda r: (r.composite_score, r.sharpe, r.ff5_alpha_ann_pct), reverse=True)
+    sharpe_ranked = sorted(eligible, key=lambda r: r.sharpe, reverse=True)
     alpha_ranked = sorted(
         [r for r in eligible if not math.isnan(r.ff5_alpha_ann_pct)],
         key=lambda r: r.ff5_alpha_ann_pct,
@@ -241,19 +259,19 @@ def analyze() -> dict:
     return {
         "as_of": datetime.now().strftime("%Y-%m-%d"),
         "benchmark": (
-            "NIFTY Midcap 150 Momentum 50 TRI proxy: leave-one-out median peer monthly return "
-            "+ average peer TER gross-up (mfapi NAV). Official TRI API (niftyindices.com) was "
-            "unreachable here; proxy validated vs MO ETF overlap (ρ≈1.0 on monthly returns)."
+            "NIFTY Midcap 150 Momentum 50 TRI proxy: median monthly return of Tata/Edelweiss/Kotak "
+            "index funds + TER gross-up (mfapi NAV). Same fixed benchmark applied to index and active funds."
         ),
         "factors_source": "Invespar FF5+Momentum (ff6) via indiafactorlibrary",
         "nav_source": "mfapi.in",
+        "min_history_months": MIN_HISTORY_MONTHS,
         "funds": [r.__dict__ for r in results],
         "eligible_ranked": [r.__dict__ for r in eligible],
-        "top3_sharpe": [r.__dict__ for r in eligible[:3]],
+        "top3_composite": [r.__dict__ for r in eligible[:3]],
+        "top3_sharpe": [r.__dict__ for r in sharpe_ranked[:3]],
         "top3_alpha": [r.__dict__ for r in alpha_ranked[:3]],
     }
 
 
 if __name__ == "__main__":
-    out = analyze()
-    print(json.dumps(out, indent=2))
+    print(json.dumps(analyze(), indent=2))
