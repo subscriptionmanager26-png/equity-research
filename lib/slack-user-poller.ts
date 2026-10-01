@@ -14,7 +14,6 @@ import {
 } from "@/lib/slack-search";
 import { acquireSlackPollChainSlot, getStore, isSlackInboundMessageProcessed, releaseSlackPollChainSlot, updateStore } from "@/lib/store";
 import { slackInboundDedupeKey } from "@/lib/slack-dedupe";
-import { scheduleSlackPollWake } from "@/lib/slack-poll-scheduler";
 import {
   getSlackHumanIdentity,
   getSlackClient,
@@ -30,9 +29,7 @@ declare global {
 
 const POLL_MS = 3000;
 const MIN_POLL_GAP_MS = 45_000;
-const CHAIN_INTERVAL_MS = 56_000;
 const MAX_NEW_MESSAGES_PER_VERCEL_POLL = 8;
-const STALE_CHAIN_MS = 75_000;
 
 type SlackPollCtx = {
   processed: Set<string>;
@@ -114,59 +111,8 @@ export async function pollSlackOnce(options?: {
   }
 }
 
-export async function maybeStartSlackPollChain() {
-  const cfg = getConfig();
-  if (!cfg.vercel || !cfg.slackUserPollConfigured || !cfg.publicUrl) return;
-  if (process.env.QSTASH_TOKEN?.trim()) return;
-  const last = Date.parse((await getStore()).slackLastPollAt ?? "") || 0;
-  if (Date.now() - last < STALE_CHAIN_MS) return;
-  await triggerSlackPollRequest({ waitForComplete: false });
-}
-
-export async function scheduleNextSlackPoll(startedAt = Date.now()) {
-  const elapsed = Date.now() - startedAt;
-  const delaySec = Math.ceil(
-    Math.max(3_000, CHAIN_INTERVAL_MS - elapsed) / 1000,
-  );
-  await scheduleSlackPollWake(delaySec);
-}
-
-export async function triggerSlackPollRequest(opts?: {
-  waitForComplete?: boolean;
-  force?: boolean;
-}) {
-  const cfg = getConfig();
-  if (!cfg.publicUrl) return;
-  const secret = process.env.CRON_SECRET?.trim();
-  const headers: Record<string, string> = {};
-  if (secret) headers.Authorization = `Bearer ${secret}`;
-  const waitForComplete = opts?.waitForComplete !== false;
-  const url = new URL(`${cfg.publicUrl}/api/slack/poll`);
-  if (opts?.force) url.searchParams.set("force", "1");
-  const response = await fetch(url.toString(), {
-    headers,
-    cache: "no-store",
-    signal: AbortSignal.timeout(waitForComplete ? 25_000 : 12_000),
-  });
-  if (!response.ok) {
-    throw new Error(`Slack poll HTTP ${response.status}`);
-  }
-  if (!waitForComplete) {
-    await response.body?.cancel();
-  }
-}
-
 async function hydrateSlackThreadsFromJobs() {
   await rememberSlackThreadsFromJobs();
-}
-
-/** Opportunistic scan from Telegram/Slack webhooks — never self-reschedule. */
-export async function kickSlackMentionScan() {
-  const cfg = getConfig();
-  if (!cfg.slackUserPollConfigured) return;
-  await pollSlackOnce().catch((error) => {
-    console.error("[relay] Slack mention scan failed", error);
-  });
 }
 
 async function loop(actorUserId: string) {
