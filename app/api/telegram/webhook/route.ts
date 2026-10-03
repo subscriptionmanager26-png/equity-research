@@ -6,7 +6,6 @@ import { watchDispatchedJob } from "@/lib/cursor-wait";
 import { handleTelegramMessage } from "@/lib/handle-telegram";
 import { getJob } from "@/lib/jobs";
 import { timingSafeEqual } from "@/lib/relay";
-import { kickSlackMentionScan } from "@/lib/slack-user-poller";
 import type { TelegramUpdate } from "@/lib/telegram";
 
 export const maxDuration = 60;
@@ -49,10 +48,6 @@ export async function POST(request: Request) {
       }
     }
   }
-
-  continueAfterResponse(async () => {
-    await kickSlackMentionScan();
-  });
 
   return NextResponse.json({ ok: true });
 }

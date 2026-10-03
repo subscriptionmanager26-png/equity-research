@@ -3,10 +3,7 @@ import { NextResponse } from "next/server";
 import { continueAfterResponse } from "@/lib/after-response";
 import { pollDispatchedJobs } from "@/lib/cursor-poll";
 import { timingSafeEqual } from "@/lib/relay";
-import {
-  pollSlackOnce,
-  scheduleNextSlackPoll,
-} from "@/lib/slack-user-poller";
+import { pollSlackOnce } from "@/lib/slack-user-poller";
 
 export const maxDuration = 60;
 
@@ -17,25 +14,13 @@ function authorized(request: Request) {
   return timingSafeEqual(header, `Bearer ${secret}`);
 }
 
-/** Search Slack for @pocketedge about once a minute (QStash POST or GET cron). */
+/** Manual Slack scan for post-downtime catch-up (protected by CRON_SECRET). */
 async function handlePoll(request: Request) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const startedAt = Date.now();
   const force = new URL(request.url).searchParams.get("force") === "1";
   const slack = await pollSlackOnce({ force });
-
-  if (!process.env.QSTASH_TOKEN?.trim()) {
-    await scheduleNextSlackPoll(startedAt).catch((error) => {
-      console.error("[relay] Slack poll chain failed", error);
-    });
-  } else {
-    const { ensureSlackPollSchedule } = await import("@/lib/slack-poll-scheduler");
-    await ensureSlackPollSchedule().catch((error) => {
-      console.error("[relay] Slack poll schedule ensure failed", error);
-    });
-  }
 
   continueAfterResponse(async () => {
     await pollDispatchedJobs({ maxMs: 20_000 }).catch((error) => {
@@ -43,7 +28,11 @@ async function handlePoll(request: Request) {
     });
   });
 
-  return NextResponse.json(slack);
+  return NextResponse.json({
+    ...slack,
+    note:
+      "Manual poll only. Production ingress is Slack Events API at /api/slack/events.",
+  });
 }
 
 export async function GET(request: Request) {

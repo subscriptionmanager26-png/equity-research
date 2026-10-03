@@ -10,11 +10,11 @@ export async function register() {
       console.error("[relay] Telegram webhook registration failed", error);
     });
     console.info(
-      "[relay] Vercel mode: Telegram webhook + Cursor status webhook + minute Slack scan",
+      "[relay] Vercel mode: Telegram webhook + Cursor status webhook + Slack Events API",
     );
-    const { ensureSlackPollSchedule } = await import("./lib/slack-poll-scheduler");
-    await ensureSlackPollSchedule().catch((error) => {
-      console.error("[relay] Slack poll schedule bootstrap failed", error);
+    const { disableSlackPollSchedule } = await import("./lib/slack-poll-scheduler");
+    await disableSlackPollSchedule().catch((error) => {
+      console.error("[relay] Slack poll schedule cleanup failed", error);
     });
     return;
   }
