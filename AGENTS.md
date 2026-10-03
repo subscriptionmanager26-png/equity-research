@@ -13,3 +13,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 This repository is checked out by Cursor Cloud Agents that answer Telegram and Slack.
 
 For **any financial instrument** (stock, ticker, company, ETF, fund, bond, earnings, filings): follow `.cursor/skills/research/financial-analysis/SKILL.md`. For long reports use `artifacts/<topic>-report.md`; for short answers reply in chat. Relay forwards output unchanged. No PDF unless the user asked for one.
+
+## Nifty Total Market prices (environment)
+
+Every Cloud Agent environment installs a local SQLite database during `scripts/install-agent-env.sh`:
+
+- Path: `$HOME/.local/share/equity-research/prices/nifty-total-market-2y.sqlite`
+- Manifest: `data/prices-manifest.json` (source URLs + expected sha256)
+- Use `eod_adjusted` for returns, screens, and backtests; see `data/README.md`
