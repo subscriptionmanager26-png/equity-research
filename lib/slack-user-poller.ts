@@ -18,7 +18,7 @@ import {
   getSlackHumanIdentity,
   getSlackClient,
   isSlackBotMessage,
-  messageTriggersRelay,
+  slackMessageIsAddressed,
   shouldIgnoreSlackSubtype,
 } from "@/lib/slack";
 import type { SlackInboundEvent } from "@/lib/types";
@@ -196,7 +196,15 @@ async function pollSearchTriggers(
       if (!match.ts || !match.user || !match.channel?.id) continue;
       if (!slackTsInLookback(match.ts)) continue;
       const text = match.text ?? "";
-      if (!messageTriggersRelay(text)) continue;
+      if (
+        !slackMessageIsAddressed({
+          type: "message",
+          text,
+          channelId: match.channel.id,
+        })
+      ) {
+        continue;
+      }
       const threadTs = slackThreadTsFromSearchMatch({
         ts: match.ts,
         thread_ts:
@@ -376,7 +384,13 @@ async function pollChannel(
       })),
     };
 
-    if (messageTriggersRelay(message.text ?? "")) {
+    if (
+      slackMessageIsAddressed({
+        type: event.type,
+        text: message.text ?? "",
+        channelId,
+      })
+    ) {
       event.type = "app_mention";
     }
     await processMessage(event, actorUserId, jobIds, ctx);
@@ -402,8 +416,12 @@ async function processMessage(
   if (shouldIgnoreSlackSubtype(event.subtype)) return;
 
   const ownMessage = event.user === actorUserId;
-  const addressed =
-    messageTriggersRelay(event.text ?? "") || event.type === "app_mention";
+  const addressed = slackMessageIsAddressed({
+    type: event.type,
+    text: event.text ?? "",
+    channelId: event.channel,
+    channelType: event.channel_type,
+  });
   if (ownMessage && !addressed) {
     const threadTs = isSlackThreadReply(event) ? event.thread_ts : undefined;
     const inDm = event.channel.startsWith("D");

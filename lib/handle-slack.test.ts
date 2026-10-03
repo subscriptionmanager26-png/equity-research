@@ -80,6 +80,7 @@ describe("classifySlackEvent", () => {
         type: "message",
         text: "@pocketedge hello",
         ts: "1.0",
+        channelId: "C0CHANNEL",
         trackedThread: false,
       }),
       "mention",
@@ -90,6 +91,31 @@ describe("classifySlackEvent", () => {
         text: "hello",
         ts: "2.0",
         thread_ts: "1.0",
+        trackedThread: false,
+      }),
+      "ignore",
+    );
+  });
+
+  it("ignores plain pocketedge in a channel without an @mention", () => {
+    assert.equal(
+      classifySlackEvent({
+        type: "message",
+        text: "pocketedge what is RELIANCE?",
+        ts: "1.0",
+        channelId: "C0CHANNEL",
+        channelType: "channel",
+        trackedThread: false,
+      }),
+      "ignore",
+    );
+    assert.equal(
+      classifySlackEvent({
+        type: "message",
+        text: "we should ask pocketedge about that later",
+        ts: "2.0",
+        channelId: "C0CHANNEL",
+        channelType: "channel",
         trackedThread: false,
       }),
       "ignore",
