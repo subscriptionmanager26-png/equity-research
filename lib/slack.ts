@@ -107,6 +107,35 @@ export function relayActorLabel() {
   return `@${slackTriggerWord}`;
 }
 
+export function isSlackPublicChannel(input: {
+  channelId?: string;
+  channelType?: string;
+}) {
+  if (input.channelType === "im" || input.channelType === "mpim") return false;
+  if (input.channelId?.startsWith("D")) return false;
+  return Boolean(input.channelId);
+}
+
+/** Bot @mention or @trigger-word — required for shared channels. */
+export function explicitlyMentionsRelay(
+  text: string,
+  options?: { mentionUserId?: string },
+) {
+  const cfg = getConfig();
+  const body = text ?? "";
+  const mentionUserId = options?.mentionUserId ?? cfg.slackMentionUserId;
+  if (mentionUserId && body.includes(`<@${mentionUserId}>`)) {
+    return true;
+  }
+  if (/<@[A-Z0-9]+\|[^>]*pocketedge[^>]*>/i.test(body)) {
+    return true;
+  }
+  const stripped = stripSlackMentions(body);
+  const word = cfg.slackTriggerWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const head = stripped.slice(0, 80);
+  return new RegExp(`^[^\\n]{0,40}@${word}\\b`, "i").test(head);
+}
+
 export function messageTriggersRelay(
   text: string,
   options?: { mentionUserId?: string },
@@ -124,6 +153,23 @@ export function messageTriggersRelay(
   const word = cfg.slackTriggerWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const head = stripped.slice(0, 80);
   return new RegExp(`^[^\\n]{0,40}@?${word}\\b`, "i").test(head);
+}
+
+export function slackMessageIsAddressed(input: {
+  type: string;
+  text?: string;
+  channelId?: string;
+  channelType?: string;
+  mentionUserId?: string;
+}) {
+  if (input.type === "app_mention") return true;
+  if (input.channelType === "im" || input.channelType === "mpim") return true;
+  const opts = { mentionUserId: input.mentionUserId };
+  const text = input.text ?? "";
+  if (isSlackPublicChannel(input)) {
+    return explicitlyMentionsRelay(text, opts);
+  }
+  return messageTriggersRelay(text, opts);
 }
 
 async function loadSlackIdentity(
