@@ -1,9 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { isServerlessRuntime, relayDataDir } from "@/lib/data-dir";
 import type { StoreData } from "@/lib/types";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+const DATA_DIR = relayDataDir();
 const STORE_PATH = path.join(DATA_DIR, "store.json");
 const KV_KEY = "relay:store";
 const BLOB_PATH = "relay/store.json";
@@ -88,6 +89,11 @@ async function readStoreFromFile(): Promise<StoreData> {
 }
 
 async function writeStoreToFile(data: StoreData): Promise<void> {
+  if (isServerlessRuntime()) {
+    throw new Error(
+      "Relay job store is not configured for serverless. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.",
+    );
+  }
   await mkdir(DATA_DIR, { recursive: true });
   await writeFile(STORE_PATH, JSON.stringify(data, null, 2), "utf8");
 }
