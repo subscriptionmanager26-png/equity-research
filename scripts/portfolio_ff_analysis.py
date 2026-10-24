@@ -12,15 +12,15 @@ import numpy as np
 import pandas as pd
 from indiafactorlibrary import IndiaFactorLibrary
 
-# Representative direct-growth index funds (same vintage ≈ common history from late 2019)
+# User-specified direct-growth index funds; Nifty 500 benchmark (longest aligned history with MOSL Midcap 150)
 FUNDS = {
     "nifty50": {
-        "code": 147794,
-        "name": "Motilal Oswal Nifty 50 Index Fund - Direct Plan - Growth",
+        "code": 120716,
+        "name": "UTI Nifty 50 Index Fund - Direct Plan - Growth",
     },
     "nifty_next50": {
-        "code": 147796,
-        "name": "Motilal Oswal Nifty Next 50 Index Fund - Direct Plan - Growth",
+        "code": 143341,
+        "name": "UTI - Nifty Next 50 Index Fund - Direct Plan - Growth",
     },
     "nifty_mid150": {
         "code": 147622,
