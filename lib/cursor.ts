@@ -72,19 +72,41 @@ export async function buildCursorPayload(job: Job) {
 
 export function buildCloudAgentPrompt(
   job: Job,
-  files: { name: string; url?: string; content_base64?: string }[],
+  files: {
+    name: string;
+    mime?: string;
+    url?: string;
+    content_base64?: string;
+  }[],
 ) {
   const question = job.threadContext
     ? `${job.prompt}\n\n---\nSlack thread context (same conversation):\n${job.threadContext}`
     : job.prompt;
-  const fileLines = files.map((file) => {
-    if (file.url) return `- ${file.name}: ${file.url}`;
-    return `- ${file.name} (inlined attachment)`;
-  });
+  const fileLines = files.map((file) => formatCloudAgentFileLine(file));
   const fileBlock = fileLines.length
-    ? `\n\nAttached files (download immediately if a URL is present):\n${fileLines.join("\n")}`
+    ? `\n\nAttached files (download immediately if a URL is present; decode base64 blocks inline):\n${fileLines.join("\n")}`
     : "";
   return `${AUTOMATION_PROMPT}\n\n---\nUser question:\n${question}${fileBlock}\n\n${deliveryInstructions(job, files.length > 0)}`;
+}
+
+const MAX_INLINE_PROMPT_BASE64 = 800_000;
+
+function formatCloudAgentFileLine(file: {
+  name: string;
+  mime?: string;
+  url?: string;
+  content_base64?: string;
+}) {
+  if (file.url) return `- ${file.name}: ${file.url}`;
+  if (file.content_base64) {
+    const truncated = file.content_base64.length > MAX_INLINE_PROMPT_BASE64;
+    const payload = truncated
+      ? `${file.content_base64.slice(0, MAX_INLINE_PROMPT_BASE64)}\n…[truncated — set PUBLIC_URL on Relay for the full file]`
+      : file.content_base64;
+    const mime = file.mime ? `, ${file.mime}` : "";
+    return `- ${file.name} (inline base64${mime}):\n\`\`\`base64\n${payload}\n\`\`\``;
+  }
+  return `- ${file.name} (could not load attachment bytes)`;
 }
 
 export async function buildCloudAgentBody(job: Job) {

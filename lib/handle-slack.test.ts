@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { classifySlackEvent } from "./handle-slack";
-import { findSlackThreadJob } from "./jobs";
+import { findSlackThreadJob, slackThreadJobFiles } from "./jobs";
 import type { Job } from "./types";
 
 describe("classifySlackEvent", () => {
@@ -169,5 +169,44 @@ describe("findSlackThreadJob", () => {
     ];
     assert.equal(findSlackThreadJob(jobs, "D1", "1.0")?.cursorAgentId, "bc-abc");
     assert.equal(findSlackThreadJob(jobs, "D1", "9.0"), undefined);
+  });
+});
+
+describe("slackThreadJobFiles", () => {
+  it("merges unique files from jobs in the same thread", () => {
+    const jobs: Job[] = [
+      {
+        id: "job_2",
+        createdAt: "",
+        updatedAt: "",
+        source: "slack",
+        prompt: "retry",
+        status: "error",
+        events: [],
+        slackChannelId: "D1",
+        slackThreadTs: "1.0",
+      },
+      {
+        id: "job_1",
+        createdAt: "",
+        updatedAt: "",
+        source: "slack",
+        prompt: "review",
+        status: "error",
+        events: [],
+        slackChannelId: "D1",
+        slackThreadTs: "1.0",
+        files: [
+          {
+            fileId: "F1",
+            name: "portfolio.csv",
+            url: "https://files.slack.com/a",
+          },
+        ],
+      },
+    ];
+    const files = slackThreadJobFiles(jobs, "D1", "1.0");
+    assert.equal(files?.length, 1);
+    assert.equal(files?.[0]?.name, "portfolio.csv");
   });
 });
