@@ -175,6 +175,27 @@ export function findSlackThreadJob(
   );
 }
 
+/** Merge attachment metadata from all jobs in a Slack thread (newest first). */
+export function slackThreadJobFiles(
+  jobs: Job[],
+  channelId: string,
+  threadTs: string,
+): Job["files"] {
+  const seen = new Set<string>();
+  const files: NonNullable<Job["files"]> = [];
+  for (const job of jobs) {
+    if (job.source !== "slack") continue;
+    if (job.slackChannelId !== channelId || job.slackThreadTs !== threadTs) continue;
+    for (const file of job.files ?? []) {
+      const key = file.fileId || file.url || file.name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      files.push(file);
+    }
+  }
+  return files.length ? files : undefined;
+}
+
 export function findJobForSlackInbound(
   jobs: Job[],
   channelId: string,

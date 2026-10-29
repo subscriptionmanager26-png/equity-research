@@ -32,6 +32,14 @@ describe("buildCloudAgentPrompt", () => {
     ]);
     assert.match(text, /notes\.md: https:\/\/example.com\/notes\.md/);
   });
+
+  it("embeds inline base64 attachments in the prompt", () => {
+    const text = buildCloudAgentPrompt(job(), [
+      { name: "holdings.csv", mime: "text/csv", content_base64: "Y,b,c" },
+    ]);
+    assert.match(text, /holdings\.csv \(inline base64, text\/csv\)/);
+    assert.match(text, /```base64\nY,b,c\n```/);
+  });
 });
 
 describe("cloudAgentModelSelection", () => {

@@ -266,13 +266,55 @@ export function stripSlackMentions(text: string) {
 export function attachmentsFromSlackEvent(
   event: SlackInboundEvent,
 ): JobFile[] {
-  return (event.files ?? []).map((file) => ({
+  return slackFilesToJobFiles(event.files);
+}
+
+function slackFilesToJobFiles(
+  files: NonNullable<SlackInboundEvent["files"]>,
+): JobFile[] {
+  return files.map((file) => ({
     fileId: file.id,
     name: file.name ?? "attachment",
     mime: file.mimetype,
     size: file.size,
     url: file.url_private_download,
   }));
+}
+
+/** Collect user-uploaded files from earlier messages in the same Slack thread. */
+export async function fetchThreadAttachments(input: {
+  channelId: string;
+  threadTs: string;
+  teamId?: string;
+  channelType?: string;
+}): Promise<JobFile[]> {
+  const result = await (
+    await resolveSlackReadClient(input.teamId, input.channelType)
+  ).conversations.replies({
+    channel: input.channelId,
+    ts: input.threadTs,
+    limit: 50,
+  });
+  if (!result.ok || !result.messages?.length) return [];
+
+  const bot = await getSlackBotIdentity(input.teamId);
+  const seen = new Set<string>();
+  const files: JobFile[] = [];
+  for (const message of result.messages) {
+    if (message.user === bot.userId) continue;
+    for (const file of message.files ?? []) {
+      if (!file.id || seen.has(file.id)) continue;
+      seen.add(file.id);
+      files.push({
+        fileId: file.id,
+        name: file.name ?? "attachment",
+        mime: file.mimetype,
+        size: file.size,
+        url: file.url_private_download,
+      });
+    }
+  }
+  return files;
 }
 
 export async function resolveSlackThreadAnchor(

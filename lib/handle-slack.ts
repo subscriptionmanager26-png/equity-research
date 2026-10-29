@@ -8,11 +8,13 @@ import {
   listJobs,
   markSlackMessageProcessed,
   rememberSlackThread,
+  slackThreadJobFiles,
 } from "@/lib/jobs";
 import { slackInboundDedupeKey } from "@/lib/slack-dedupe";
 import {
   attachmentsFromSlackEvent,
   enrichSlackThreadTs,
+  fetchThreadAttachments,
   fetchThreadContext,
   getSlackBotIdentity,
   isSlackBotMessage,
@@ -276,7 +278,26 @@ async function handleThreadMessage(
   }
 
   const text = stripSlackMentions(event.text ?? "").trim();
-  const files = attachmentsFromSlackEvent(event);
+  let files = attachmentsFromSlackEvent(event);
+  if (files.length === 0) {
+    files = await fetchThreadAttachments({
+      channelId: event.channel,
+      threadTs,
+      teamId: ctx.teamId || undefined,
+      channelType: event.channel_type,
+    }).catch((error) => {
+      console.error("[relay] Slack thread attachment fetch failed", error);
+      return [];
+    });
+  }
+  if (files.length === 0) {
+    const priorFiles = slackThreadJobFiles(
+      await listJobs(),
+      event.channel,
+      threadTs,
+    );
+    if (priorFiles?.length) files = priorFiles;
+  }
   if (!text && files.length === 0) {
     return { ignored: true, reason: "empty" };
   }

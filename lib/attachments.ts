@@ -7,6 +7,14 @@ import type { Job, JobFile } from "@/lib/types";
 const ATTACHMENTS_DIR = path.join(process.cwd(), ".data", "attachments");
 const MAX_INLINE_BYTES = 12 * 1024 * 1024;
 
+/** Writable attachment cache (Vercel has no persistent `.data`). */
+export function attachmentsRootDir() {
+  if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
+    return path.join("/tmp", "relay-attachments");
+  }
+  return ATTACHMENTS_DIR;
+}
+
 export type CursorFilePayload = {
   name: string;
   mime?: string;
@@ -37,11 +45,6 @@ async function resolveSlackFile(job: Job, file: JobFile) {
   const token = getSlackAuthToken();
   if (!file.url) throw new Error("Missing Slack file URL");
 
-  const dir = path.join(ATTACHMENTS_DIR, job.id);
-  await mkdir(dir, { recursive: true });
-  const safeName = file.name.replace(/[^\w.-]+/g, "_");
-  const target = path.join(dir, safeName);
-
   const response = await fetch(file.url, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -49,28 +52,32 @@ async function resolveSlackFile(job: Job, file: JobFile) {
     throw new Error(`Could not download ${file.name}: HTTP ${response.status}`);
   }
   const bytes = Buffer.from(await response.arrayBuffer());
-  await writeFile(target, bytes);
 
-  if (publicUrl) {
+  if (!publicUrl) {
+    if (bytes.byteLength > MAX_INLINE_BYTES) {
+      throw new Error(
+        `Slack attachment ${file.name} is too large to inline. Set PUBLIC_URL on Relay.`,
+      );
+    }
     return {
       name: file.name,
       mime: file.mime,
-      size: file.size ?? bytes.byteLength,
-      url: `${publicUrl}/api/attachments/${job.id}/${encodeURIComponent(safeName)}`,
+      size: bytes.byteLength,
+      content_base64: bytes.toString("base64"),
     };
   }
 
-  if (bytes.byteLength > MAX_INLINE_BYTES) {
-    throw new Error(
-      `Slack attachment ${file.name} is too large to inline. Set PUBLIC_URL on Relay.`,
-    );
-  }
+  const safeName = file.name.replace(/[^\w.-]+/g, "_");
+  const dir = path.join(attachmentsRootDir(), job.id);
+  await mkdir(dir, { recursive: true });
+  const target = path.join(dir, safeName);
+  await writeFile(target, bytes);
 
   return {
     name: file.name,
     mime: file.mime,
-    size: bytes.byteLength,
-    content_base64: bytes.toString("base64"),
+    size: file.size ?? bytes.byteLength,
+    url: `${publicUrl}/api/attachments/${job.id}/${encodeURIComponent(safeName)}`,
   };
 }
 
@@ -86,7 +93,7 @@ export async function resolveJobFileUrl(job: Job, file: JobFile) {
 
 export function attachmentPath(jobId: string, name: string) {
   const safeName = name.replace(/[^\w.-]+/g, "_");
-  return path.join(ATTACHMENTS_DIR, jobId, safeName);
+  return path.join(attachmentsRootDir(), jobId, safeName);
 }
 
 export async function readCachedAttachment(jobId: string, name: string) {
