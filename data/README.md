@@ -21,8 +21,18 @@ The install script also writes `$HOME/.local/share/equity-research/prices/PRICES
 - `eod_adjusted` — corporate-action adjusted closes (preferred for returns/screens)
 - `eod_raw` — raw NSE bhavcopy closes
 - `ca_cache` — corporate-action payloads per symbol
+- `symbol_metrics` — per-symbol summary metrics from the build pipeline
 - `build_meta` — build timestamps and adjustment notes
 
 ## Refresh
 
-Re-run `bash scripts/install-price-database.sh` after updating `data/prices-manifest.json` with a new `sha256` and `download_url`.
+After republishing the blob, sync the repo manifest from the published source of truth:
+
+```bash
+bash scripts/sync-prices-manifest.sh
+bash scripts/verify-prices-manifest.sh
+```
+
+Then re-run `bash scripts/install-price-database.sh` in agent environments (or trigger a new environment build).
+
+CI runs `scripts/verify-prices-manifest.sh` on changes to `data/prices-manifest.json` or price install scripts.
