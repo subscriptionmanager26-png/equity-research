@@ -1,0 +1,20 @@
+name: verify-prices-manifest
+
+on:
+  pull_request:
+    paths:
+      - "data/prices-manifest.json"
+      - "scripts/**"
+  push:
+    branches: [main]
+    paths:
+      - "data/prices-manifest.json"
+      - "scripts/**"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare committed manifest to published blob
+        run: bash scripts/verify-prices-manifest.sh
