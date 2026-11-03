@@ -1,15 +1,15 @@
 {
   "version": 1,
   "universe": "is_nifty_total_market",
-  "description": "Nifty Total Market ~2Y NSE bhavcopy with corporate-action back-adjustment (eod_adjusted).",
-  "built_at": "2026-10-03T10:38:36.624380",
-  "sha256": "2a5db6cc3d344df040700e9675cf6abfe50938310e689017bccb8d92d48896c9",
-  "size_bytes": 92274688,
-  "gzip_size_bytes": 34821300,
+  "description": "Nifty Total Market ~2Y EOD bhavcopy, corporate-action back-adjusted (eod_adjusted + symbol_metrics).",
+  "built_at": "2026-10-09T18:51:47.569124+00:00",
+  "sha256": "397dd17957694adf771f99332ec0a2d8321288ea0ef688222341cad52ae86d14",
+  "size_bytes": 95887360,
+  "gzip_size_bytes": 35700145,
   "download_url": "https://swz2aawt4rtld4wq.public.blob.vercel-storage.com/prices/nifty-total-market-2y.sqlite.gz",
   "manifest_url": "https://swz2aawt4rtld4wq.public.blob.vercel-storage.com/prices/manifest.json",
   "proxy_manifest_url": "https://momentum-screen-builder-app.vercel.app/api/prices/manifest",
   "format": "sqlite3",
-  "tables": ["eod_raw", "eod_adjusted", "ca_cache", "build_meta"],
+  "tables": ["eod_raw", "eod_adjusted", "ca_cache", "symbol_metrics", "build_meta"],
   "install_path": "~/.local/share/equity-research/prices/nifty-total-market-2y.sqlite"
 }
