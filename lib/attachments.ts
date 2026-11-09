@@ -1,10 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { getConfig } from "@/lib/config";
 import type { Job, JobFile } from "@/lib/types";
 
-const ATTACHMENTS_DIR = path.join(process.cwd(), ".data", "attachments");
+const ATTACHMENTS_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "relay-attachments")
+  : path.join(process.cwd(), ".data", "attachments");
 const MAX_INLINE_BYTES = 12 * 1024 * 1024;
 
 export type CursorFilePayload = {

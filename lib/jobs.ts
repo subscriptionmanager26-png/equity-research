@@ -97,7 +97,7 @@ export async function addJobEvent(
   patch?: Partial<Job>,
 ): Promise<Job | undefined> {
   return updateStore((data) => {
-    const job = data.jobs.find((item) => item.id === jobId);
+    const job = data.jobs.find((item) => item?.id === jobId);
     if (!job) return undefined;
     job.updatedAt = new Date().toISOString();
     job.events.unshift({
@@ -115,10 +115,39 @@ export async function addJobEvent(
   });
 }
 
+/**
+ * Insert or replace a job by id. Used after Cursor starts so a concurrent
+ * store overwrite cannot leave an agent with no Relay job to settle.
+ */
+export async function upsertJob(job: Job): Promise<Job> {
+  return updateStore((data) => {
+    const now = new Date().toISOString();
+    const next: Job = { ...job, updatedAt: now };
+    const index = data.jobs.findIndex((item) => item?.id === job.id);
+    if (index >= 0) {
+      data.jobs[index] = { ...data.jobs[index], ...next };
+      const [existing] = data.jobs.splice(index, 1);
+      data.jobs.unshift(existing);
+    } else {
+      data.jobs.unshift(next);
+    }
+    data.jobs = data.jobs.filter(Boolean).slice(0, MAX_JOBS);
+    if (next.slackChannelId && next.slackThreadTs) {
+      rememberSlackThreadInStore(data, {
+        channelId: next.slackChannelId,
+        threadTs: next.slackThreadTs,
+        lastJobId: next.id,
+        updatedAt: now,
+      });
+    }
+    return data.jobs[0]!;
+  });
+}
+
 /** Atomically claim a dispatched job so two webhook/poll workers cannot both deliver. */
 export async function claimJobForSettle(jobId: string): Promise<Job | undefined> {
   return updateStore((data) => {
-    const job = data.jobs.find((item) => item.id === jobId);
+    const job = data.jobs.find((item) => item?.id === jobId);
     if (!job || job.status !== "dispatched") return undefined;
     job.status = "delivering";
     job.updatedAt = new Date().toISOString();

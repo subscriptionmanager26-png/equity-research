@@ -239,6 +239,9 @@ async function handleMention(
       files,
       followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
     });
+    if (!job?.id) {
+      throw new Error("Relay created a Cursor agent but failed to save the job");
+    }
     return { jobId: job.id };
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Dispatch failed";
@@ -246,7 +249,7 @@ async function handleMention(
       channelId: event.channel,
       threadTs,
       teamId: ctx.teamId || undefined,
-      text: `Something went wrong before I could reach Cursor: ${detail}`,
+      text: `Something went wrong in Relay (job bookkeeping): ${detail}`,
     }).catch(() => undefined);
     return { error: detail };
   }
@@ -315,6 +318,9 @@ async function handleThreadMessage(
       files,
       followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
     });
+    if (!job?.id) {
+      throw new Error("Relay created a Cursor agent but failed to save the job");
+    }
     return { jobId: job.id, followUp: true };
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Dispatch failed";
@@ -322,7 +328,7 @@ async function handleThreadMessage(
       channelId: event.channel,
       threadTs,
       teamId: ctx.teamId || undefined,
-      text: `Something went wrong before I could reach Cursor: ${detail}`,
+      text: `Something went wrong in Relay (job bookkeeping): ${detail}`,
     }).catch(() => undefined);
     return { error: detail };
   }

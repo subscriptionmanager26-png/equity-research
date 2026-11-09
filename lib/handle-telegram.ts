@@ -148,12 +148,15 @@ export async function handleTelegramMessage(message: TelegramMessage) {
       telegramInboundMessageId: message.message_id,
       telegramAckMessageId: ackId,
     });
+    if (!job?.id) {
+      throw new Error("Relay created a Cursor agent but failed to save the job");
+    }
     return { jobId: job.id };
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Dispatch failed";
     await sendTelegramMessage({
       chatId,
-      text: `Something went wrong before I could reach Cursor: ${detail}`,
+      text: `Something went wrong in Relay (job bookkeeping): ${detail}`,
     }).catch(() => undefined);
     return { error: detail };
   }

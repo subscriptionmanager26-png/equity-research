@@ -220,13 +220,20 @@ export function stripSlackMentions(text: string) {
 export function attachmentsFromSlackEvent(
   event: SlackInboundEvent,
 ): JobFile[] {
-  return (event.files ?? []).map((file) => ({
-    fileId: file.id,
-    name: file.name ?? "attachment",
-    mime: file.mimetype,
-    size: file.size,
-    url: file.url_private_download,
-  }));
+  const files: JobFile[] = [];
+  for (const file of event.files ?? []) {
+    if (!file) continue;
+    const fileId = file.id ?? file.name;
+    if (!fileId) continue;
+    files.push({
+      fileId,
+      name: file.name ?? "attachment",
+      mime: file.mimetype,
+      size: file.size,
+      url: file.url_private_download,
+    });
+  }
+  return files;
 }
 
 export async function resolveSlackThreadAnchor(

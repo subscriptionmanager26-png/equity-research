@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -6,6 +7,9 @@ import type { StoreData } from "@/lib/types";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
 const KV_KEY = "relay:store";
+const STORE_LOCK_KEY = "relay:store:lock";
+const STORE_LOCK_TTL_MS = 8_000;
+const STORE_LOCK_WAIT_MS = 20_000;
 const BLOB_PATH = "relay/store.json";
 
 const emptyStore = (): StoreData => ({
@@ -77,6 +81,39 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Cross-instance lock for the Redis store. The in-process `withLock` only
+ * serializes work on one Vercel isolate; without this, concurrent read-modify-write
+ * cycles overwrite each other and drop jobs (orphaned Cursor agents).
+ */
+async function withRedisStoreLock<T>(fn: () => Promise<T>): Promise<T> {
+  const redis = await getRedis();
+  const token = randomUUID();
+  const deadline = Date.now() + STORE_LOCK_WAIT_MS;
+  while (Date.now() < deadline) {
+    const ok = await redis.set(STORE_LOCK_KEY, token, {
+      nx: true,
+      px: STORE_LOCK_TTL_MS,
+    });
+    if (ok === "OK") {
+      try {
+        return await fn();
+      } finally {
+        const current = await redis.get<string>(STORE_LOCK_KEY);
+        if (current === token) {
+          await redis.del(STORE_LOCK_KEY);
+        }
+      }
+    }
+    await sleep(40 + Math.floor(Math.random() * 80));
+  }
+  throw new Error("Timed out waiting for Relay store lock");
+}
+
 async function readStoreFromFile(): Promise<StoreData> {
   try {
     const raw = await readFile(STORE_PATH, "utf8");
@@ -92,9 +129,18 @@ async function writeStoreToFile(data: StoreData): Promise<void> {
   await writeFile(STORE_PATH, JSON.stringify(data, null, 2), "utf8");
 }
 
+function isValidJob(item: unknown): item is StoreData["jobs"][number] {
+  return (
+    Boolean(item) &&
+    typeof item === "object" &&
+    typeof (item as { id?: unknown }).id === "string"
+  );
+}
+
 function normalizeStore(parsed: StoreData): StoreData {
+  const jobs = (parsed.jobs ?? []).filter(isValidJob);
   return {
-    jobs: parsed.jobs ?? [],
+    jobs,
     chats: parsed.chats ?? [],
     slackThreads: parsed.slackThreads ?? {},
     processedSlackEvents: parsed.processedSlackEvents ?? [],
@@ -270,19 +316,33 @@ async function writeStore(data: StoreData): Promise<void> {
   return writeStoreToFile(data);
 }
 
+async function runStoreMutation<T>(
+  mutator: (data: StoreData) => T | Promise<T>,
+): Promise<T> {
+  const data = await readStore();
+  const result = await mutator(data);
+  await writeStore(data);
+  return result;
+}
+
 export function updateStore<T>(
   mutator: (data: StoreData) => T | Promise<T>,
 ): Promise<T> {
   return withLock(async () => {
-    const data = await readStore();
-    const result = await mutator(data);
-    await writeStore(data);
-    return result;
+    if (activeBackend() === "upstash-redis") {
+      return withRedisStoreLock(() => runStoreMutation(mutator));
+    }
+    return runStoreMutation(mutator);
   });
 }
 
 export function getStore(): Promise<StoreData> {
-  return withLock(() => readStore());
+  return withLock(async () => {
+    if (activeBackend() === "upstash-redis") {
+      return withRedisStoreLock(() => readStore());
+    }
+    return readStore();
+  });
 }
 
 export function storeBackend() {

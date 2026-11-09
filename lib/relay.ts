@@ -15,6 +15,7 @@ import {
   getJob,
   latestChat,
   listChats,
+  upsertJob,
 } from "@/lib/jobs";
 import { ackSlackDone, sendSlackFile, sendSlackMessage, slackUploadErrorDetail } from "@/lib/slack";
 import { getSlackInstall } from "@/lib/slack-install";
@@ -67,7 +68,8 @@ export async function completeJobDispatch(job: Job): Promise<Job> {
     const result = await dispatchToCursor(job);
     if (!result.ok) {
       const detail = cursorErrorDetail(result.status, result.body);
-      await addJobEvent(
+      const now = new Date().toISOString();
+      const failed = await addJobEvent(
         job.id,
         { type: "cursor_error", detail },
         {
@@ -77,38 +79,73 @@ export async function completeJobDispatch(job: Job): Promise<Job> {
           cursorBody: result.body,
         },
       );
+      if (!failed) {
+        await upsertJob({
+          ...job,
+          updatedAt: now,
+          status: "error",
+          error: detail,
+          cursorHttpStatus: result.status,
+          cursorBody: result.body,
+          events: [
+            { at: now, type: "cursor_error", detail },
+            ...(job.events ?? []),
+          ],
+        }).catch((error) => {
+          console.error(`[relay] Failed to persist cursor_error for ${job.id}`, error);
+        });
+      }
       await notifyJobFailure(job, [
         "I reached Cursor, but the cloud agent did not start.",
         `${detail}.`,
       ].join(" "));
-      return (await getJob(job.id)) ?? job;
+      return (await getJob(job.id)) ?? failed ?? job;
     }
 
     const agentId = extractAgentId(result.body);
-    return (await addJobEvent(
-      job.id,
-      {
-        type: "dispatched",
-        detail: agentId
-          ? `Started Cursor cloud agent (${agentId})`
-          : `Started Cursor cloud agent (HTTP ${result.status})`,
-      },
-      {
-        status: "dispatched",
-        cursorHttpStatus: result.status,
-        cursorBody: result.body,
-        cursorAgentId: agentId,
-      },
-    )) as Job;
+    const now = new Date().toISOString();
+    const dispatched: Job = {
+      ...job,
+      updatedAt: now,
+      status: "dispatched",
+      cursorHttpStatus: result.status,
+      cursorBody: result.body,
+      cursorAgentId: agentId,
+      events: [
+        {
+          at: now,
+          type: "dispatched",
+          detail: agentId
+            ? `Started Cursor cloud agent (${agentId})`
+            : `Started Cursor cloud agent (HTTP ${result.status})`,
+        },
+        ...(job.events ?? []),
+      ],
+    };
+    // Upsert (not addJobEvent-only) so a concurrent Redis overwrite that
+    // dropped the queued row cannot orphan the Cursor agent.
+    try {
+      return await upsertJob(dispatched);
+    } catch (error) {
+      console.error(
+        `[relay] Failed to persist dispatched job ${job.id} (agent ${agentId ?? "unknown"})`,
+        error,
+      );
+      return dispatched;
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Dispatch failed";
-    await addJobEvent(
-      job.id,
-      { type: "cursor_error", detail },
-      { status: "error", error: detail },
-    );
-    await notifyJobFailure(job, `I could not reach Cursor: ${detail}`);
-    return (await getJob(job.id)) ?? job;
+    try {
+      await addJobEvent(
+        job.id,
+        { type: "cursor_error", detail },
+        { status: "error", error: detail },
+      );
+      await notifyJobFailure(job, `I could not reach Cursor: ${detail}`);
+    } catch (secondary) {
+      console.error("[relay] Could not record dispatch failure for", job.id, secondary);
+    }
+    return (await getJob(job.id).catch(() => undefined)) ?? job;
   }
 }
 
