@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 
-import { continueAfterResponse } from "@/lib/after-response";
 import { getConfig } from "@/lib/config";
-import { watchDispatchedJob } from "@/lib/cursor-wait";
 import { handleSlackEvent } from "@/lib/handle-slack";
-import { getJob, markSlackEventProcessed } from "@/lib/jobs";
+import { markSlackEventProcessed } from "@/lib/jobs";
 import { deactivateSlackInstall } from "@/lib/slack-install";
 import { verifySlackSignature } from "@/lib/slack";
 import type { SlackInboundEvent } from "@/lib/types";
 
-export const maxDuration = 60;
+/** Thin ingress: verify, claim, enqueue — Cursor work runs in /api/jobs/dispatch. */
+export const maxDuration = 10;
 
 export async function POST(request: Request) {
   const cfg = getConfig();
@@ -66,20 +65,9 @@ export async function POST(request: Request) {
     console.info(
       `[relay] Slack event ${event.type} channel=${event.channel} channel_type=${event.channel_type ?? "unknown"} user=${event.user ?? "none"}`,
     );
-    const result = await handleSlackEvent(event, { teamId }).catch((error) => {
+    await handleSlackEvent(event, { teamId }).catch((error) => {
       console.error("[relay] Slack webhook event failed", error);
-      return undefined;
     });
-    const jobId = result && "jobId" in result ? result.jobId : undefined;
-    if (jobId) {
-      const job = await getJob(jobId);
-      const agentId = job?.cursorAgentId;
-      if (job?.status === "dispatched" && agentId) {
-        continueAfterResponse(() =>
-          watchDispatchedJob(job.id, agentId, Date.parse(job.createdAt)),
-        );
-      }
-    }
   }
 
   return NextResponse.json({ ok: true });

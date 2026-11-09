@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { continueAfterResponse } from "@/lib/after-response";
-import { watchDispatchedJob } from "@/lib/cursor-wait";
 import { getJob } from "@/lib/jobs";
 import { acquireCursorSlot, releaseCursorSlot } from "@/lib/cursor-slots";
 import { enqueueJobDispatch, verifyQStashRequest } from "@/lib/qstash";
 import { completeJobDispatch } from "@/lib/relay";
 
+/** Cursor create can take a while; settle is via status webhook + /api/cursor/poll. */
 export const maxDuration = 60;
 
 type DispatchBody = { jobId?: string };
@@ -54,17 +53,11 @@ export async function POST(request: Request) {
 
   try {
     const updated = await completeJobDispatch(job);
-    const agentId = updated.cursorAgentId;
-    if (updated.status === "dispatched" && agentId) {
-      continueAfterResponse(() =>
-        watchDispatchedJob(updated.id, agentId, Date.parse(updated.createdAt)),
-      );
-    }
     return NextResponse.json({
       ok: true,
       jobId: updated.id,
       status: updated.status,
-      cursorAgentId: agentId ?? null,
+      cursorAgentId: updated.cursorAgentId ?? null,
     });
   } finally {
     await releaseCursorSlot().catch(() => undefined);

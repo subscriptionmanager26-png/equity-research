@@ -103,7 +103,8 @@ export async function pollSlackOnce(options?: {
     const actor = await getSlackHumanIdentity();
     const jobIds: string[] = [];
     const ctx: SlackPollCtx = {
-      processed: new Set((await getStore()).processedSlackMessages ?? []),
+      // Per-pass soft dedupe only; Redis NX keys are the durable source of truth.
+      processed: new Set(),
       remainingNew: cfg.slackEventsPrimary
         ? MAX_NEW_MESSAGES_EVENTS_PRIMARY
         : MAX_NEW_MESSAGES_PER_VERCEL_POLL,

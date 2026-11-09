@@ -1,4 +1,5 @@
 import { listJobs, reclaimStaleDeliveringJobs } from "@/lib/jobs";
+import { pruneMissingRecentJobs } from "@/lib/job-store";
 import { extractAgentId } from "@/lib/cursor-api";
 import {
   settleAgentJob,
@@ -43,6 +44,7 @@ export async function retryStaleQueuedJobs(opts?: { max?: number }) {
 /** Settle any dispatched jobs whose Cursor agent has finished (cron / manual backup). */
 export async function pollDispatchedJobs(opts?: { maxMs?: number }) {
   const deadline = opts?.maxMs ? Date.now() + opts.maxMs : Number.POSITIVE_INFINITY;
+  const pruned = await pruneMissingRecentJobs().catch(() => 0);
   const reclaimed = await reclaimStaleDeliveringJobs(120_000);
   const queuedRetried = await retryStaleQueuedJobs();
   const jobs = await listJobs();
@@ -85,6 +87,7 @@ export async function pollDispatchedJobs(opts?: { maxMs?: number }) {
     artifactFollowUps,
     reclaimed,
     queuedRetried,
+    pruned,
     scanned: jobs.filter((j) => j.status === "dispatched" || j.pendingArtifacts).length,
   };
 }

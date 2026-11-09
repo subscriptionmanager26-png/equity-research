@@ -1,5 +1,5 @@
 import { getRedis, kvEnabled } from "@/lib/store";
-import type { Job } from "@/lib/types";
+import type { Job, JobStatus } from "@/lib/types";
 import { normalizeCursorAgentId } from "@/lib/cursor-api";
 
 export const JOB_KEY_PREFIX = "relay:job:";
@@ -7,6 +7,9 @@ export const AGENT_KEY_PREFIX = "relay:agent:";
 export const RECENT_JOBS_KEY = "relay:jobs:recent";
 export const JOBS_MIGRATED_KEY = "relay:jobs:migrated-v1";
 export const MAX_RECENT_JOBS = 500;
+export const MAX_JOB_EVENTS = 20;
+/** Terminal job + agent index retention. */
+export const JOB_TTL_SECONDS = 60 * 60 * 24 * 14;
 const SETTLE_CLAIM_PREFIX = "relay:settle:";
 
 export function jobKey(jobId: string) {
@@ -21,6 +24,16 @@ export function jobsBackendIsRedis() {
   return kvEnabled();
 }
 
+export function isTerminalJobStatus(status: JobStatus) {
+  return status === "replied" || status === "error";
+}
+
+export function capJobEvents<T extends { events?: Job["events"] }>(job: T): T {
+  const events = job.events ?? [];
+  if (events.length <= MAX_JOB_EVENTS) return job;
+  return { ...job, events: events.slice(0, MAX_JOB_EVENTS) };
+}
+
 export async function readJobRecord(jobId: string): Promise<Job | undefined> {
   const redis = await getRedis();
   const job = await redis.get<Job>(jobKey(jobId));
@@ -30,14 +43,37 @@ export async function readJobRecord(jobId: string): Promise<Job | undefined> {
 export async function writeJobRecord(job: Job): Promise<Job> {
   const redis = await getRedis();
   const now = Date.now();
-  const next: Job = { ...job, updatedAt: new Date(now).toISOString() };
-  await redis.set(jobKey(next.id), next);
+  const next = capJobEvents({
+    ...job,
+    updatedAt: new Date(now).toISOString(),
+  });
+  const terminal = isTerminalJobStatus(next.status);
+  if (terminal) {
+    await redis.set(jobKey(next.id), next, { ex: JOB_TTL_SECONDS });
+  } else {
+    await redis.set(jobKey(next.id), next);
+  }
   await redis.zadd(RECENT_JOBS_KEY, { score: now, member: next.id });
   await trimRecentJobs(redis);
   if (next.cursorAgentId) {
-    await redis.set(agentKey(next.cursorAgentId), next.id);
+    if (terminal) {
+      await redis.set(agentKey(next.cursorAgentId), next.id, { ex: JOB_TTL_SECONDS });
+    } else {
+      await redis.set(agentKey(next.cursorAgentId), next.id);
+    }
   }
   return next;
+}
+
+async function deleteJobKeys(
+  redis: Awaited<ReturnType<typeof getRedis>>,
+  job: Job | undefined,
+  jobId: string,
+) {
+  await redis.del(jobKey(jobId));
+  if (job?.cursorAgentId) {
+    await redis.del(agentKey(job.cursorAgentId));
+  }
 }
 
 async function trimRecentJobs(redis: Awaited<ReturnType<typeof getRedis>>) {
@@ -45,8 +81,32 @@ async function trimRecentJobs(redis: Awaited<ReturnType<typeof getRedis>>) {
   if (count <= MAX_RECENT_JOBS) return;
   const stale = await redis.zrange(RECENT_JOBS_KEY, 0, count - MAX_RECENT_JOBS - 1);
   if (!stale.length) return;
+  for (const id of stale) {
+    const jobId = String(id);
+    const job = await redis.get<Job>(jobKey(jobId));
+    // Drop payloads for missing/terminal jobs; keep active jobs addressable by id/agent.
+    if (!job || isTerminalJobStatus(job.status)) {
+      await deleteJobKeys(redis, job ?? undefined, jobId);
+    }
+  }
   await redis.zrem(RECENT_JOBS_KEY, ...stale);
-  // Keep job payloads for active statuses; drop only from the recent index.
+}
+
+/** Remove ZSET members whose job keys already expired / were deleted. */
+export async function pruneMissingRecentJobs(): Promise<number> {
+  if (!kvEnabled()) return 0;
+  const redis = await getRedis();
+  const ids = await redis.zrange(RECENT_JOBS_KEY, 0, -1);
+  let pruned = 0;
+  for (const id of ids) {
+    const jobId = String(id);
+    const exists = await redis.exists(jobKey(jobId));
+    if (!exists) {
+      await redis.zrem(RECENT_JOBS_KEY, jobId);
+      pruned += 1;
+    }
+  }
+  return pruned;
 }
 
 export async function listRecentJobRecords(limit = MAX_RECENT_JOBS): Promise<Job[]> {
@@ -106,11 +166,22 @@ export async function migrateJobsFromBlobIfNeeded(
     if (!job?.id) continue;
     const existing = await redis.get(jobKey(job.id));
     if (!existing) {
-      await redis.set(jobKey(job.id), job);
-      const score = Date.parse(job.updatedAt || job.createdAt) || Date.now();
-      await redis.zadd(RECENT_JOBS_KEY, { score, member: job.id });
-      if (job.cursorAgentId) {
-        await redis.set(agentKey(job.cursorAgentId), job.id);
+      const capped = capJobEvents(job);
+      if (isTerminalJobStatus(capped.status)) {
+        await redis.set(jobKey(capped.id), capped, { ex: JOB_TTL_SECONDS });
+      } else {
+        await redis.set(jobKey(capped.id), capped);
+      }
+      const score = Date.parse(capped.updatedAt || capped.createdAt) || Date.now();
+      await redis.zadd(RECENT_JOBS_KEY, { score, member: capped.id });
+      if (capped.cursorAgentId) {
+        if (isTerminalJobStatus(capped.status)) {
+          await redis.set(agentKey(capped.cursorAgentId), capped.id, {
+            ex: JOB_TTL_SECONDS,
+          });
+        } else {
+          await redis.set(agentKey(capped.cursorAgentId), capped.id);
+        }
       }
       migrated += 1;
     }

@@ -163,8 +163,7 @@ const TELEGRAM_MSG_PREFIX = "relay:telegram-msg:";
 export async function isSlackInboundMessageProcessed(messageKey: string): Promise<boolean> {
   if (kvEnabled()) {
     const redis = await getRedis();
-    const value = await redis.get(`${SLACK_MSG_PREFIX}${messageKey}`);
-    if (value) return true;
+    return Boolean(await redis.get(`${SLACK_MSG_PREFIX}${messageKey}`));
   }
   const data = await getStore();
   return Boolean(data.processedSlackMessages?.includes(messageKey));
@@ -179,15 +178,7 @@ export async function claimSlackInboundMessage(messageKey: string): Promise<bool
       nx: true,
       ex: ttlSeconds,
     });
-    if (ok !== "OK") return false;
-    await updateStore((data) => {
-      data.processedSlackMessages = data.processedSlackMessages ?? [];
-      if (!data.processedSlackMessages.includes(messageKey)) {
-        data.processedSlackMessages.unshift(messageKey);
-        data.processedSlackMessages = data.processedSlackMessages.slice(0, 2000);
-      }
-    });
-    return true;
+    return ok === "OK";
   }
   return updateStore((data) => {
     data.processedSlackMessages = data.processedSlackMessages ?? [];

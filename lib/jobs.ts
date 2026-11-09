@@ -1,9 +1,11 @@
 import {
+  capJobEvents,
   claimSettleSlot,
   getJobIdForAgent,
   indexAgentJob,
   jobsBackendIsRedis,
   listRecentJobRecords,
+  MAX_JOB_EVENTS,
   migrateJobsFromBlobIfNeeded,
   readJobRecord,
   releaseSettleSlot,
@@ -23,6 +25,18 @@ const MAX_JOBS_FILE = 100;
 const MAX_SLACK_EVENT_IDS = 500;
 const MAX_RECENT_JOBS = 500;
 
+function pushJobEvent(job: Job, event: Omit<JobEvent, "at"> & { at?: string }, at: string) {
+  job.events = job.events ?? [];
+  job.events.unshift({
+    at: event.at ?? at,
+    type: event.type,
+    detail: event.detail,
+  });
+  if (job.events.length > MAX_JOB_EVENTS) {
+    job.events = job.events.slice(0, MAX_JOB_EVENTS);
+  }
+}
+
 let migrationPromise: Promise<void> | undefined;
 
 async function ensureJobMigration() {
@@ -31,9 +45,11 @@ async function ensureJobMigration() {
     migrationPromise = (async () => {
       const data = await getStore();
       await migrateJobsFromBlobIfNeeded(data.jobs);
-      if (data.jobs?.length) {
+      if (data.jobs?.length || data.processedSlackMessages?.length) {
         await updateStore((store) => {
           store.jobs = [];
+          // Redis NX keys are the dedupe source of truth; drop the blob copy.
+          store.processedSlackMessages = [];
         });
       }
     })().catch((error) => {
@@ -180,19 +196,14 @@ export async function addJobEvent(
     const job = await readJobRecord(jobId);
     if (!job) return undefined;
     job.updatedAt = new Date().toISOString();
-    job.events = job.events ?? [];
-    job.events.unshift({
-      at: event.at ?? job.updatedAt,
-      type: event.type,
-      detail: event.detail,
-    });
+    pushJobEvent(job, event, job.updatedAt);
     if (patch) {
       Object.assign(job, patch, { updatedAt: job.updatedAt });
       if ("pendingArtifacts" in patch && patch.pendingArtifacts === undefined) {
         delete job.pendingArtifacts;
       }
     }
-    const saved = await writeJobRecord(job);
+    const saved = await writeJobRecord(capJobEvents(job));
     if (saved.cursorAgentId) {
       await indexAgentJob(saved.cursorAgentId, saved.id);
     }
@@ -210,18 +221,14 @@ export async function addJobEvent(
     const job = data.jobs.find((item) => item?.id === jobId);
     if (!job) return undefined;
     job.updatedAt = new Date().toISOString();
-    job.events.unshift({
-      at: event.at ?? job.updatedAt,
-      type: event.type,
-      detail: event.detail,
-    });
+    pushJobEvent(job, event, job.updatedAt);
     if (patch) {
       Object.assign(job, patch, { updatedAt: job.updatedAt });
       if ("pendingArtifacts" in patch && patch.pendingArtifacts === undefined) {
         delete job.pendingArtifacts;
       }
     }
-    return job;
+    return capJobEvents(job);
   });
 }
 
@@ -284,12 +291,10 @@ export async function claimJobForSettle(jobId: string): Promise<Job | undefined>
     }
     job.status = "delivering";
     job.updatedAt = new Date().toISOString();
-    job.events = job.events ?? [];
-    job.events.unshift({
-      at: job.updatedAt,
+    pushJobEvent(job, {
       type: "delivering",
       detail: "Collecting Cursor answer and artifacts",
-    });
+    }, job.updatedAt);
     return writeJobRecord(job);
   }
 
@@ -298,11 +303,10 @@ export async function claimJobForSettle(jobId: string): Promise<Job | undefined>
     if (!job || job.status !== "dispatched") return undefined;
     job.status = "delivering";
     job.updatedAt = new Date().toISOString();
-    job.events.unshift({
-      at: job.updatedAt,
+    pushJobEvent(job, {
       type: "delivering",
       detail: "Collecting Cursor answer and artifacts",
-    });
+    }, job.updatedAt);
     return job;
   });
 }
@@ -319,12 +323,10 @@ export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
       if (now - Date.parse(job.updatedAt) < maxAgeMs) continue;
       job.status = "dispatched";
       job.updatedAt = new Date().toISOString();
-      job.events = job.events ?? [];
-      job.events.unshift({
-        at: job.updatedAt,
+      pushJobEvent(job, {
         type: "reclaimed",
         detail: "Delivery worker timed out; polling will retry",
-      });
+      }, job.updatedAt);
       await writeJobRecord(job);
       await releaseSettleSlot(job.id);
       reclaimed += 1;
@@ -339,11 +341,10 @@ export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
       if (now - Date.parse(job.updatedAt) < maxAgeMs) continue;
       job.status = "dispatched";
       job.updatedAt = new Date().toISOString();
-      job.events.unshift({
-        at: job.updatedAt,
+      pushJobEvent(job, {
         type: "reclaimed",
         detail: "Delivery worker timed out; polling will retry",
-      });
+      }, job.updatedAt);
       reclaimed += 1;
     }
     return reclaimed;

@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { continueAfterResponse } from "@/lib/after-response";
 import { getConfig } from "@/lib/config";
-import { watchDispatchedJob } from "@/lib/cursor-wait";
 import { handleTelegramMessage } from "@/lib/handle-telegram";
-import { getJob } from "@/lib/jobs";
 import { timingSafeEqual } from "@/lib/relay";
 import type { TelegramUpdate } from "@/lib/telegram";
 
-export const maxDuration = 60;
+/** Thin ingress: verify, claim, enqueue — Cursor work runs in /api/jobs/dispatch. */
+export const maxDuration = 10;
 
 export async function POST(request: Request) {
   const cfg = getConfig();
@@ -33,20 +31,9 @@ export async function POST(request: Request) {
 
   const message = update.message ?? update.edited_message;
   if (message) {
-    const result = await handleTelegramMessage(message).catch((error) => {
+    await handleTelegramMessage(message).catch((error) => {
       console.error("[relay] Telegram webhook handler failed", error);
-      return undefined;
     });
-    const jobId = result && "jobId" in result ? result.jobId : undefined;
-    if (jobId) {
-      const job = await getJob(jobId);
-      const agentId = job?.cursorAgentId;
-      if (job?.status === "dispatched" && agentId) {
-        continueAfterResponse(() =>
-          watchDispatchedJob(job.id, agentId, Date.parse(job.createdAt)),
-        );
-      }
-    }
   }
 
   return NextResponse.json({ ok: true });
