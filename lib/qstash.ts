@@ -38,7 +38,7 @@ export async function enqueueJobDispatch(
     body: { jobId },
     headers: cronHeaders(),
     retries: 3,
-    deduplicationId: `dispatch:${jobId}`,
+    deduplicationId: `dispatch-${jobId}`,
   };
   if (options?.delaySeconds && options.delaySeconds > 0) {
     body.delay = options.delaySeconds;
