@@ -16,7 +16,7 @@ import {
   fetchThreadContext,
   getSlackBotIdentity,
   isSlackBotMessage,
-  messageTriggersRelay,
+  slackMessageIsAddressed,
   ackSlackWorking,
   sendSlackMessage,
   shouldIgnoreSlackSubtype,
@@ -63,13 +63,13 @@ export function classifySlackEvent(input: {
   if (input.type !== "app_mention" && input.type !== "message") {
     return "ignore" as const;
   }
-  const inBotDm = isSlackBotDirectMessage(input.channelType);
-  const addressed =
-    input.type === "app_mention" ||
-    inBotDm ||
-    messageTriggersRelay(input.text ?? "", {
-      mentionUserId: input.mentionUserId,
-    });
+  const addressed = slackMessageIsAddressed({
+    type: input.type,
+    text: input.text,
+    channelId: input.channelId,
+    channelType: input.channelType,
+    mentionUserId: input.mentionUserId,
+  });
   const inDm = Boolean(
     input.channelId?.startsWith("D") || input.channelType === "im",
   );

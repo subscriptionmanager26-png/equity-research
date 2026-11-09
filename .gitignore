@@ -49,3 +49,7 @@ agent-tools/
 
 # agent-generated files (Telegram artifacts)
 /artifacts/
+
+# local price database copies (installed by scripts/install-price-database.sh)
+data/*.sqlite
+data/*.sqlite.gz

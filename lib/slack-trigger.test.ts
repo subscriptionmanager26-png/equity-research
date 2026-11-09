@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { messageTriggersRelay } from "./slack";
+import { explicitlyMentionsRelay, messageTriggersRelay } from "./slack";
 
 describe("messageTriggersRelay", () => {
   it("wakes on @pocketedge at the start of a user question", () => {
@@ -12,6 +12,23 @@ describe("messageTriggersRelay", () => {
       true,
     );
     assert.equal(messageTriggersRelay("@pocketedge hello"), true);
+  });
+
+  it("requires @ for plain trigger word in channels", () => {
+    assert.equal(explicitlyMentionsRelay("pocketedge what is RELIANCE?"), false);
+    assert.equal(explicitlyMentionsRelay("@pocketedge what is RELIANCE?"), true);
+    assert.equal(
+      explicitlyMentionsRelay("pocketedge what is RELIANCE?", {
+        mentionUserId: "U0BOT",
+      }),
+      false,
+    );
+    assert.equal(
+      explicitlyMentionsRelay("<@U0BOT> what is RELIANCE?", {
+        mentionUserId: "U0BOT",
+      }),
+      true,
+    );
   });
 
   it("does not treat Relay answers that mention pocketedge later as new jobs", () => {

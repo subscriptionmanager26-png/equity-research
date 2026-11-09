@@ -1,28 +1,49 @@
 # Slack setup
 
-Relay answers Slack **as the Pocketedge bot** (`SLACK_BOT_TOKEN`). The user token (`SLACK_USER_TOKEN`) is still used to search channels you can read. Replies are **thread-only**.
+Relay answers Slack **as the Pocketedge bot** (`SLACK_BOT_TOKEN`). Replies are **thread-only**.
 
-## Production (Vercel)
+## Production (Vercel) — Events API
 
-1. Create a Slack app (or reuse yours) and add **User Token Scopes** below, then reinstall so you get an `xoxp-…` token.
-2. Set on Vercel Production: `SLACK_USER_TOKEN`, `SLACK_TRIGGER_WORD=pocketedge`, `CRON_SECRET`, and **`QSTASH_TOKEN`** (Upstash QStash — same console as Redis). QStash pings `/api/slack/poll` about once a minute; without it, Hobby `waitUntil` self-chains are unreliable and GitHub’s 5‑minute cron often runs only every few hours on private repos.
-3. **`SLACK_BOT_TOKEN`** + **`SLACK_SIGNING_SECRET`** for instant `@Pocketedge` mentions and **artifact file uploads** (`files:write` required).
+Slack pushes messages to Relay in ~1–2 seconds via the **Events API**. No background polling runs on Vercel.
 
-Relay scans Slack about **once a minute** via `/api/slack/poll`. **QStash** is the reliable scheduler on Vercel Hobby. A daily Vercel cron plus the GitHub Action (`.github/workflows/slack-poll.yml`) are backups only. Search looks back two days, so a missed `@pocketedge` is picked up on the next scan instead of being skipped by a stale cursor.
+1. Create a Slack app (or reuse yours) at [api.slack.com/apps](https://api.slack.com/apps).
+2. Set on Vercel Production: `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_TRIGGER_WORD=pocketedge`, `CRON_SECRET`, and `PUBLIC_URL` (or rely on `VERCEL_URL`).
+3. Optional: `QSTASH_TOKEN` — only needed on the deploy that removes a legacy minute poll schedule (see below).
 
-Say `@pocketedge …` in any channel you can read. In **channels**, only messages that mention `@pocketedge` start a job or a follow-up — ordinary channel or thread chatter is left alone. In **DMs with you**, a thread reply is still a follow-up without the mention.
+### Slack app settings
+
+| Setting | Value |
+| --- | --- |
+| **Event Subscriptions** | Enabled |
+| **Request URL** | `https://equity-research-ivory.vercel.app/api/slack/events` |
+| **Bot events** | `app_mention`, `message.channels`, `message.groups`, `message.im`, `message.mpim`, `app_uninstalled` |
+
+**Bot token scopes:** `app_mentions:read`, `chat:write`, `files:read`, `files:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `users:read`, `reactions:write`
+
+Invite the bot (`/invite @newsagent`) to channels where `@pocketedge` should work.
+
+Say `@pocketedge …` in any channel the bot is in. In **channels**, only messages that mention `@pocketedge` start a job or a follow-up. In **DMs**, a thread reply continues the agent without the mention.
 
 Telegram and Slack stay separate. A Slack question is answered in that Slack thread only.
 
-### Slack app settings if you created the app by hand
+### Manual catch-up after downtime
 
-- **Event Subscriptions** (optional backup) → Request URL: `https://equity-research-ivory.vercel.app/api/slack/events`
-- Subscribe to bot events: `app_mention`, `message.channels`, `message.groups`, `message.im`, `message.mpim`
-- Bot token scopes (**required for artifacts**): `app_mentions:read`, `chat:write`, `files:read`, `files:write`, `channels:history`, `groups:history`, `im:history`, `mpim:history`, `users:read`, `reactions:write`
+If Relay was down when Slack sent an event, that message is lost unless the user mentions again. For rare recovery, run a **manual** scan (costs Active CPU — use sparingly):
+
+```bash
+curl -fsS -H "Authorization: Bearer $CRON_SECRET" \
+  "https://equity-research-ivory.vercel.app/api/slack/poll?force=1"
+```
+
+Requires `SLACK_USER_TOKEN` on Vercel if you rely on workspace search; bot-token Events API does not need it for normal operation.
+
+### Legacy QStash schedule cleanup
+
+If you previously used minute polling, delete schedule **`relay-slack-poll-minute`** in [Upstash QStash](https://console.upstash.com/qstash), or set `QSTASH_TOKEN` once on deploy so Relay deletes it automatically.
 
 ---
 
-## Local only — reply as **you** (no bot invite)
+## Local only — reply as **you** (user token polling)
 
 You do **not** need a Slack bot invited to every channel.
 
@@ -34,6 +55,8 @@ Relay uses your **user token** (`xoxp-…`) to:
 
 No app named "Pocketedge" is required. `pocketedge` is just a trigger word.
 
+Local dev runs `startSlackUserPoller()` — a long-running search loop (`npm run dev`). This does not run on Vercel.
+
 ---
 
 ## What to put in `.env.local`
@@ -43,7 +66,7 @@ SLACK_USER_TOKEN=xoxp-…
 SLACK_TRIGGER_WORD=pocketedge
 ```
 
-That is all you need for the workflow you described.
+That is all you need for the local user-token workflow.
 
 ### User token scopes
 
@@ -67,7 +90,7 @@ Reinstall/reauthorize after adding scopes.
 
 ## Bot token (`xoxb-…`) on Vercel
 
-On Vercel this **is** the right token (Events API). The table below only applies to **local** “reply as you” vs “reply as a bot”.
+On Vercel this **is** the production token (Events API). The table below only applies to **local** “reply as you” vs “reply as a bot”.
 
 A **bot token** posts as a **bot user**. It must be **invited** to each channel (`/invite @Relay`).
 
@@ -75,7 +98,7 @@ A **bot token** posts as a **bot user**. It must be **invited** to each channel 
 | --- | --- | --- |
 | Replies as | **You** | A bot |
 | Channel invites | **Not needed** (uses your membership) | Needed per channel |
-| How Relay listens | Workspace search + your threads | App events / Socket Mode |
+| How Relay listens | Workspace search + your threads (local) | App events (Vercel) |
 
 If you gave Relay a bot token expecting it to reply as you, it cannot — that is a Slack platform rule. Keep the bot token out of `.env.local` unless you explicitly want a separate bot identity.
 
@@ -93,13 +116,13 @@ SLACK_CHANNEL_IDS=C01234567,C76543210
 
 ## Try it
 
-In any channel you already belong to:
+In any channel the bot is in:
 
 ```
 @pocketedge summarize the Q3 plan
 ```
 
-Relay acks in that thread and posts the Cursor answer **as your Slack account** when the run finishes.
+Relay acks in that thread and posts the Cursor answer when the run finishes.
 
 Thread follow-up in a **channel** (must mention `@pocketedge`):
 
@@ -121,10 +144,9 @@ Telegram and Slack stay fully separate — answers never cross platforms.
 
 ## Direct messages (DMs)
 
-**Yes — DMs work**, with the user token (`xoxp-`):
+**Yes — DMs work** with the bot token on Vercel (`message.im` event) or with the user token locally.
 
-- Someone DMs you: `@pocketedge summarize this` → Relay triggers and replies in that DM **as you**
-- You start a DM: send `@pocketedge …` to a coworker (or yourself) → Relay triggers on your message too
+- Someone DMs the bot: `@pocketedge summarize this` → Relay triggers and replies in that DM
 - Thread replies in a DM continue the agent without `@pocketedge`. In a channel, mention `@pocketedge` again.
 
-Make sure the user token has `im:history`, `im:read`, and `search:read`. No bot invite is needed for DMs you are already in.
+Make sure the bot has `im:history` (and related scopes). For local user-token mode, include `im:history`, `im:read`, and `search:read`.
