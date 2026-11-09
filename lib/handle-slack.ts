@@ -1,4 +1,4 @@
-import { ingestAndDispatch } from "@/lib/relay";
+import { ingestJob } from "@/lib/relay";
 import { getConfig } from "@/lib/config";
 import {
   findSlackThreadJob,
@@ -225,7 +225,7 @@ async function handleMention(
   const prior = tracked?.lastJobId ? await getJob(tracked.lastJobId) : undefined;
 
   try {
-    const job = await ingestAndDispatch({
+    const job = await ingestJob({
       source: "slack",
       prompt,
       threadContext,
@@ -240,7 +240,7 @@ async function handleMention(
       followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
     });
     if (!job?.id) {
-      throw new Error("Relay created a Cursor agent but failed to save the job");
+      throw new Error("Relay failed to save the job");
     }
     return { jobId: job.id };
   } catch (error) {
@@ -304,7 +304,7 @@ async function handleThreadMessage(
 
   try {
     const prior = tracked.lastJobId ? await getJob(tracked.lastJobId) : undefined;
-    const job = await ingestAndDispatch({
+    const job = await ingestJob({
       source: "slack",
       prompt,
       threadContext,
@@ -319,7 +319,7 @@ async function handleThreadMessage(
       followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
     });
     if (!job?.id) {
-      throw new Error("Relay created a Cursor agent but failed to save the job");
+      throw new Error("Relay failed to save the job");
     }
     return { jobId: job.id, followUp: true };
   } catch (error) {

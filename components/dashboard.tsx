@@ -34,12 +34,15 @@ type StatusPayload = {
   slackUserConfigured: boolean;
   slackSocketConfigured: boolean;
   slackUserPollConfigured: boolean;
+  slackEventsPrimary?: boolean;
   slackReplyAsUser: boolean;
   slackTriggerWord: string;
   replyConfigured: boolean;
   publicUrlSet: boolean;
   cursorStatusConfigured?: boolean;
   cursorStatusWebhookUrl?: string;
+  qstashConfigured?: boolean;
+  vercel?: boolean;
   telegramChatIdSet: boolean;
   replyUrl: string;
   slackEventsPath: string;
@@ -269,6 +272,18 @@ export function Dashboard() {
               : status?.publicUrlSet
                 ? "Set CURSOR_STATUS_WEBHOOK_SECRET and add the URL in Cursor → Cloud Agents → Webhooks."
                 : "Set PUBLIC_URL + CURSOR_STATUS_WEBHOOK_SECRET for instant delivery (polling is the fallback)."
+          }
+        />
+        <StatusCard
+          title="QStash dispatch"
+          ok={Boolean(status?.qstashConfigured)}
+          warn={Boolean(status?.vercel && !status?.qstashConfigured)}
+          detail={
+            status?.qstashConfigured
+              ? status.slackEventsPrimary
+                ? "Webhooks enqueue Cursor work via QStash. Slack Events API is primary; poll is catch-up only."
+                : "Webhooks enqueue Cursor work via QStash workers for fast ACK under load."
+              : "Set QSTASH_TOKEN on Vercel Production. Required so Slack/Telegram can ACK without waiting on Cursor."
           }
         />
         <StatusCard

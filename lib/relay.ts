@@ -17,12 +17,13 @@ import {
   listChats,
   upsertJob,
 } from "@/lib/jobs";
+import { enqueueJobDispatch, qstashConfigured } from "@/lib/qstash";
 import { ackSlackDone, sendSlackFile, sendSlackMessage, slackUploadErrorDetail } from "@/lib/slack";
 import { getSlackInstall } from "@/lib/slack-install";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
 import type { Job, JobSource, TelegramChat } from "@/lib/types";
 
-export async function ingestAndDispatch(input: {
+type IngestInput = {
   source: JobSource;
   prompt: string;
   chatId?: number;
@@ -38,7 +39,9 @@ export async function ingestAndDispatch(input: {
   followUpAgentId?: string;
   telegramInboundMessageId?: number;
   telegramAckMessageId?: number;
-}): Promise<Job> {
+};
+
+async function createIngestJob(input: IngestInput): Promise<Job> {
   const cfg = getConfig();
   const fallback = input.source === "dashboard" ? await latestChat() : undefined;
   const envChatId = cfg.telegramChatId ? Number(cfg.telegramChatId) : undefined;
@@ -48,7 +51,7 @@ export async function ingestAndDispatch(input: {
     envChatId: Number.isFinite(envChatId) ? envChatId : undefined,
     fallbackChatId: fallback?.chatId,
   });
-  const job = await createJob({
+  return createJob({
     ...input,
     chatId,
     username:
@@ -58,7 +61,40 @@ export async function ingestAndDispatch(input: {
       input.displayName ??
       (input.source === "dashboard" ? fallback?.displayName : undefined),
   });
+}
 
+/** Create a queued job and hand Cursor dispatch to a QStash worker (fast webhook path). */
+export async function ingestAndEnqueue(input: IngestInput): Promise<Job> {
+  const job = await createIngestJob(input);
+  await enqueueJobDispatch(job.id);
+  return job;
+}
+
+/**
+ * Preferred ingest entrypoint: enqueue via QStash when configured.
+ * On Vercel production, QStash is required so webhooks stay fast.
+ */
+export async function ingestJob(input: IngestInput): Promise<Job> {
+  const cfg = getConfig();
+  if (cfg.vercel) {
+    if (!qstashConfigured()) {
+      throw new Error(
+        "QSTASH_TOKEN is required on Vercel so Relay can enqueue Cursor dispatch",
+      );
+    }
+    if (!cfg.publicUrl) {
+      throw new Error("PUBLIC_URL is required on Vercel for QStash dispatch");
+    }
+    return ingestAndEnqueue(input);
+  }
+  if (qstashConfigured() && cfg.publicUrl) {
+    return ingestAndEnqueue(input);
+  }
+  return ingestAndDispatch(input);
+}
+
+export async function ingestAndDispatch(input: IngestInput): Promise<Job> {
+  const job = await createIngestJob(input);
   return completeJobDispatch(job);
 }
 

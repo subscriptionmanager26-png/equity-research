@@ -30,8 +30,11 @@ declare global {
 
 const POLL_MS = 3000;
 const MIN_POLL_GAP_MS = 45_000;
+/** When Events API is primary, poll is catch-up only — poll less often. */
+const MIN_POLL_GAP_EVENTS_PRIMARY_MS = 5 * 60_000;
 const CHAIN_INTERVAL_MS = 56_000;
 const MAX_NEW_MESSAGES_PER_VERCEL_POLL = 8;
+const MAX_NEW_MESSAGES_EVENTS_PRIMARY = 3;
 const STALE_CHAIN_MS = 75_000;
 
 type SlackPollCtx = {
@@ -73,9 +76,13 @@ export async function pollSlackOnce(options?: {
   const cfg = getConfig();
   if (!cfg.slackUserPollConfigured) return { ok: false, reason: "no_user_token" };
 
+  const minGap = cfg.slackEventsPrimary
+    ? MIN_POLL_GAP_EVENTS_PRIMARY_MS
+    : MIN_POLL_GAP_MS;
+
   if (!options?.force) {
     const last = Date.parse((await getStore()).slackLastPollAt ?? "") || 0;
-    if (Date.now() - last < MIN_POLL_GAP_MS) {
+    if (Date.now() - last < minGap) {
       return { ok: true, skipped: true, reason: "throttled", jobIds: [] };
     }
   }
@@ -87,7 +94,7 @@ export async function pollSlackOnce(options?: {
   try {
     const claimed = await updateStore((data) => {
       const last = Date.parse(data.slackLastPollAt ?? "") || 0;
-      if (!options?.force && Date.now() - last < MIN_POLL_GAP_MS) {
+      if (!options?.force && Date.now() - last < minGap) {
         return false;
       }
       data.slackLastPollAt = new Date().toISOString();
@@ -100,7 +107,9 @@ export async function pollSlackOnce(options?: {
     const jobIds: string[] = [];
     const ctx: SlackPollCtx = {
       processed: new Set((await getStore()).processedSlackMessages ?? []),
-      remainingNew: MAX_NEW_MESSAGES_PER_VERCEL_POLL,
+      remainingNew: cfg.slackEventsPrimary
+        ? MAX_NEW_MESSAGES_EVENTS_PRIMARY
+        : MAX_NEW_MESSAGES_PER_VERCEL_POLL,
     };
     await hydrateSlackThreadsFromJobs();
     await runPollStep("channels", () => pollConfiguredChannels(actor.userId, jobIds, ctx));

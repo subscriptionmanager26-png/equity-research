@@ -1,4 +1,15 @@
-import { claimSlackInboundMessage, getStore, updateStore } from "@/lib/store";
+import {
+  claimSettleSlot,
+  getJobIdForAgent,
+  indexAgentJob,
+  jobsBackendIsRedis,
+  listRecentJobRecords,
+  migrateJobsFromBlobIfNeeded,
+  readJobRecord,
+  releaseSettleSlot,
+  writeJobRecord,
+} from "@/lib/job-store";
+import { claimSlackInboundMessage, getStore, kvEnabled, updateStore } from "@/lib/store";
 import type {
   InboundMessage,
   Job,
@@ -8,8 +19,30 @@ import type {
   TelegramChat,
 } from "@/lib/types";
 
-const MAX_JOBS = 100;
+const MAX_JOBS_FILE = 100;
 const MAX_SLACK_EVENT_IDS = 500;
+const MAX_RECENT_JOBS = 500;
+
+let migrationPromise: Promise<void> | undefined;
+
+async function ensureJobMigration() {
+  if (!kvEnabled()) return;
+  if (!migrationPromise) {
+    migrationPromise = (async () => {
+      const data = await getStore();
+      await migrateJobsFromBlobIfNeeded(data.jobs);
+      if (data.jobs?.length) {
+        await updateStore((store) => {
+          store.jobs = [];
+        });
+      }
+    })().catch((error) => {
+      migrationPromise = undefined;
+      console.error("[relay] Job migration failed", error);
+    });
+  }
+  await migrationPromise;
+}
 
 export function newJobId() {
   return `job_${crypto.randomUUID()}`;
@@ -19,7 +52,7 @@ export function slackThreadKey(channelId: string, threadTs: string) {
   return `${channelId}:${threadTs}`;
 }
 
-export async function createJob(input: {
+function buildJob(input: {
   source: JobSource;
   prompt: string;
   chatId?: number;
@@ -35,9 +68,9 @@ export async function createJob(input: {
   followUpAgentId?: string;
   telegramInboundMessageId?: number;
   telegramAckMessageId?: number;
-}): Promise<Job> {
+}): Job {
   const now = new Date().toISOString();
-  const job: Job = {
+  return {
     id: newJobId(),
     createdAt: now,
     updatedAt: now,
@@ -67,10 +100,55 @@ export async function createJob(input: {
       },
     ],
   };
+}
+
+export async function createJob(input: {
+  source: JobSource;
+  prompt: string;
+  chatId?: number;
+  username?: string;
+  displayName?: string;
+  slackChannelId?: string;
+  slackThreadTs?: string;
+  slackTeamId?: string;
+  slackUserId?: string;
+  slackMessageTs?: string;
+  threadContext?: string;
+  files?: Job["files"];
+  followUpAgentId?: string;
+  telegramInboundMessageId?: number;
+  telegramAckMessageId?: number;
+}): Promise<Job> {
+  await ensureJobMigration();
+  const job = buildJob(input);
+  const now = job.createdAt;
+
+  if (jobsBackendIsRedis()) {
+    await writeJobRecord(job);
+    await updateStore((data) => {
+      if (input.chatId) {
+        upsertChat(data.chats, {
+          chatId: input.chatId,
+          username: input.username,
+          displayName: input.displayName,
+          at: now,
+        });
+      }
+      if (input.slackChannelId && input.slackThreadTs) {
+        rememberSlackThreadInStore(data, {
+          channelId: input.slackChannelId,
+          threadTs: input.slackThreadTs,
+          lastJobId: job.id,
+          updatedAt: now,
+        });
+      }
+    });
+    return job;
+  }
 
   return updateStore((data) => {
     data.jobs.unshift(job);
-    data.jobs = data.jobs.slice(0, MAX_JOBS);
+    data.jobs = data.jobs.slice(0, MAX_JOBS_FILE);
     if (input.chatId) {
       upsertChat(data.chats, {
         chatId: input.chatId,
@@ -96,6 +174,38 @@ export async function addJobEvent(
   event: Omit<JobEvent, "at"> & { at?: string },
   patch?: Partial<Job>,
 ): Promise<Job | undefined> {
+  await ensureJobMigration();
+
+  if (jobsBackendIsRedis()) {
+    const job = await readJobRecord(jobId);
+    if (!job) return undefined;
+    job.updatedAt = new Date().toISOString();
+    job.events = job.events ?? [];
+    job.events.unshift({
+      at: event.at ?? job.updatedAt,
+      type: event.type,
+      detail: event.detail,
+    });
+    if (patch) {
+      Object.assign(job, patch, { updatedAt: job.updatedAt });
+      if ("pendingArtifacts" in patch && patch.pendingArtifacts === undefined) {
+        delete job.pendingArtifacts;
+      }
+    }
+    const saved = await writeJobRecord(job);
+    if (saved.cursorAgentId) {
+      await indexAgentJob(saved.cursorAgentId, saved.id);
+    }
+    if (saved.slackChannelId && saved.slackThreadTs) {
+      await rememberSlackThread({
+        channelId: saved.slackChannelId,
+        threadTs: saved.slackThreadTs,
+        lastJobId: saved.id,
+      });
+    }
+    return saved;
+  }
+
   return updateStore((data) => {
     const job = data.jobs.find((item) => item?.id === jobId);
     if (!job) return undefined;
@@ -120,9 +230,26 @@ export async function addJobEvent(
  * store overwrite cannot leave an agent with no Relay job to settle.
  */
 export async function upsertJob(job: Job): Promise<Job> {
+  await ensureJobMigration();
+  const now = new Date().toISOString();
+  const next: Job = { ...job, updatedAt: now };
+
+  if (jobsBackendIsRedis()) {
+    const saved = await writeJobRecord(next);
+    if (saved.cursorAgentId) {
+      await indexAgentJob(saved.cursorAgentId, saved.id);
+    }
+    if (saved.slackChannelId && saved.slackThreadTs) {
+      await rememberSlackThread({
+        channelId: saved.slackChannelId,
+        threadTs: saved.slackThreadTs,
+        lastJobId: saved.id,
+      });
+    }
+    return saved;
+  }
+
   return updateStore((data) => {
-    const now = new Date().toISOString();
-    const next: Job = { ...job, updatedAt: now };
     const index = data.jobs.findIndex((item) => item?.id === job.id);
     if (index >= 0) {
       data.jobs[index] = { ...data.jobs[index], ...next };
@@ -131,7 +258,7 @@ export async function upsertJob(job: Job): Promise<Job> {
     } else {
       data.jobs.unshift(next);
     }
-    data.jobs = data.jobs.filter(Boolean).slice(0, MAX_JOBS);
+    data.jobs = data.jobs.filter(Boolean).slice(0, MAX_JOBS_FILE);
     if (next.slackChannelId && next.slackThreadTs) {
       rememberSlackThreadInStore(data, {
         channelId: next.slackChannelId,
@@ -146,6 +273,26 @@ export async function upsertJob(job: Job): Promise<Job> {
 
 /** Atomically claim a dispatched job so two webhook/poll workers cannot both deliver. */
 export async function claimJobForSettle(jobId: string): Promise<Job | undefined> {
+  await ensureJobMigration();
+
+  if (jobsBackendIsRedis()) {
+    if (!(await claimSettleSlot(jobId))) return undefined;
+    const job = await readJobRecord(jobId);
+    if (!job || job.status !== "dispatched") {
+      await releaseSettleSlot(jobId);
+      return undefined;
+    }
+    job.status = "delivering";
+    job.updatedAt = new Date().toISOString();
+    job.events = job.events ?? [];
+    job.events.unshift({
+      at: job.updatedAt,
+      type: "delivering",
+      detail: "Collecting Cursor answer and artifacts",
+    });
+    return writeJobRecord(job);
+  }
+
   return updateStore((data) => {
     const job = data.jobs.find((item) => item?.id === jobId);
     if (!job || job.status !== "dispatched") return undefined;
@@ -161,7 +308,30 @@ export async function claimJobForSettle(jobId: string): Promise<Job | undefined>
 }
 
 export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
+  await ensureJobMigration();
   const now = Date.now();
+
+  if (jobsBackendIsRedis()) {
+    const jobs = await listRecentJobRecords(MAX_RECENT_JOBS);
+    let reclaimed = 0;
+    for (const job of jobs) {
+      if (job.status !== "delivering") continue;
+      if (now - Date.parse(job.updatedAt) < maxAgeMs) continue;
+      job.status = "dispatched";
+      job.updatedAt = new Date().toISOString();
+      job.events = job.events ?? [];
+      job.events.unshift({
+        at: job.updatedAt,
+        type: "reclaimed",
+        detail: "Delivery worker timed out; polling will retry",
+      });
+      await writeJobRecord(job);
+      await releaseSettleSlot(job.id);
+      reclaimed += 1;
+    }
+    return reclaimed;
+  }
+
   return updateStore((data) => {
     let reclaimed = 0;
     for (const job of data.jobs) {
@@ -181,13 +351,38 @@ export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
 }
 
 export async function getJob(jobId: string): Promise<Job | undefined> {
+  await ensureJobMigration();
+  if (jobsBackendIsRedis()) {
+    return readJobRecord(jobId);
+  }
   const data = await getStore();
   return data.jobs.find((job) => job.id === jobId);
 }
 
 export async function listJobs(): Promise<Job[]> {
+  await ensureJobMigration();
+  if (jobsBackendIsRedis()) {
+    return listRecentJobRecords(MAX_RECENT_JOBS);
+  }
   const data = await getStore();
   return data.jobs;
+}
+
+/** Resolve a job for a Cursor agent via the agent index (Redis) or scan. */
+export async function findDispatchedJobForAgentId(
+  agentId: string,
+): Promise<Job | undefined> {
+  await ensureJobMigration();
+  const { findDispatchedJobForAgent } = await import("@/lib/cursor-settle");
+  if (jobsBackendIsRedis()) {
+    const jobId = await getJobIdForAgent(agentId);
+    if (jobId) {
+      const job = await readJobRecord(jobId);
+      if (job?.status === "dispatched") return job;
+    }
+  }
+  const jobs = await listJobs();
+  return findDispatchedJobForAgent(jobs, agentId);
 }
 
 export function findSlackThreadJob(
@@ -265,8 +460,9 @@ export async function listChats(): Promise<TelegramChat[]> {
 
 export async function rememberSlackThreadsFromJobs() {
   const now = new Date().toISOString();
+  const jobs = await listJobs();
   await updateStore((data) => {
-    for (const job of [...data.jobs].reverse()) {
+    for (const job of [...jobs].reverse()) {
       if (!job.slackChannelId || !job.slackThreadTs) continue;
       rememberSlackThreadInStore(data, {
         channelId: job.slackChannelId,
@@ -298,6 +494,15 @@ export async function getSlackThread(
 }
 
 export async function markSlackEventProcessed(eventId: string): Promise<boolean> {
+  if (kvEnabled()) {
+    const { getRedis } = await import("@/lib/store");
+    const redis = await getRedis();
+    const ok = await redis.set(`relay:slack-event:${eventId}`, "1", {
+      nx: true,
+      ex: 60 * 60 * 24 * 7,
+    });
+    if (ok !== "OK") return false;
+  }
   return updateStore((data) => {
     data.processedSlackEvents = data.processedSlackEvents ?? [];
     if (data.processedSlackEvents.includes(eventId)) return false;

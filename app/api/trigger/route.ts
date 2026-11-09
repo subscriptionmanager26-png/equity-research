@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { ingestAndDispatch } from "@/lib/relay";
+import { ingestJob } from "@/lib/relay";
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const job = await ingestAndDispatch({
+  const job = await ingestJob({
     source: "dashboard",
     prompt: text,
   });

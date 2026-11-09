@@ -1,7 +1,7 @@
 import { getConfig } from "@/lib/config";
-import { ingestAndDispatch } from "@/lib/relay";
+import { ingestJob } from "@/lib/relay";
 import { findTelegramFollowUpJob, listJobs, logInbound, rememberChat } from "@/lib/jobs";
-import { getStore } from "@/lib/store";
+import { claimTelegramInboundMessage, getStore } from "@/lib/store";
 import {
   attachmentsFromMessage,
   displayName,
@@ -107,6 +107,10 @@ export async function handleTelegramMessage(message: TelegramMessage) {
     text ||
     `Process the attached file${files.length === 1 ? "" : "s"} and follow any implied request.`;
 
+  if (!(await claimTelegramInboundMessage(chatId, message.message_id))) {
+    return { ignored: true, reason: "duplicate_message" };
+  }
+
   await logInbound({
     chatId,
     text: prompt,
@@ -137,7 +141,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
   });
 
   try {
-    const job = await ingestAndDispatch({
+    const job = await ingestJob({
       source: "telegram",
       prompt,
       chatId,
@@ -149,7 +153,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
       telegramAckMessageId: ackId,
     });
     if (!job?.id) {
-      throw new Error("Relay created a Cursor agent but failed to save the job");
+      throw new Error("Relay failed to save the job");
     }
     return { jobId: job.id };
   } catch (error) {

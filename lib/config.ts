@@ -66,6 +66,7 @@ export function getConfig() {
     slackBotConfigured: Boolean(slackBotToken),
     slackUserConfigured: Boolean(slackUserToken),
     slackUserPollConfigured: Boolean(slackUserToken || slackBotToken),
+    slackEventsPrimary: Boolean(slackBotToken && slackSigningSecret),
     slackReplyAsBot: Boolean(slackBotToken),
     slackReplyAsUser: Boolean(slackUserToken) && !slackBotToken,
     slackSocketConfigured: Boolean(
@@ -79,6 +80,7 @@ export function getConfig() {
     cursorStatusWebhookUrl: publicUrl
       ? `${publicUrl}/api/cursor/status`
       : undefined,
+    qstashConfigured: Boolean(process.env.QSTASH_TOKEN?.trim()),
     vercel: Boolean(process.env.VERCEL),
     storeBackend: storeBackend(),
   };
@@ -111,5 +113,7 @@ export function publicStatus() {
     cursorStatusConfigured: cfg.cursorStatusConfigured,
     vercel: cfg.vercel,
     storeBackend: cfg.storeBackend,
+    qstashConfigured: cfg.qstashConfigured,
+    slackEventsPrimary: cfg.slackEventsPrimary,
   };
 }

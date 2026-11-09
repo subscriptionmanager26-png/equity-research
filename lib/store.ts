@@ -56,7 +56,7 @@ function redisCredentials() {
   return { url, token };
 }
 
-function kvEnabled() {
+export function kvEnabled() {
   return Boolean(redisCredentials());
 }
 
@@ -158,6 +158,7 @@ function normalizeStore(parsed: StoreData): StoreData {
 
 const SLACK_POLL_CHAIN_KEY = "relay:slack-poll-chain";
 const SLACK_MSG_PREFIX = "relay:slack-msg:";
+const TELEGRAM_MSG_PREFIX = "relay:telegram-msg:";
 
 export async function isSlackInboundMessageProcessed(messageKey: string): Promise<boolean> {
   if (kvEnabled()) {
@@ -192,6 +193,31 @@ export async function claimSlackInboundMessage(messageKey: string): Promise<bool
     data.processedSlackMessages = data.processedSlackMessages ?? [];
     if (data.processedSlackMessages.includes(messageKey)) return false;
     data.processedSlackMessages.unshift(messageKey);
+    data.processedSlackMessages = data.processedSlackMessages.slice(0, 2000);
+    return true;
+  });
+}
+
+/** Cross-instance dedupe for a Telegram chat:message_id before dispatching. */
+export async function claimTelegramInboundMessage(
+  chatId: number,
+  messageId: number,
+): Promise<boolean> {
+  const messageKey = `${chatId}:${messageId}`;
+  const ttlSeconds = 60 * 60 * 24 * 14;
+  if (kvEnabled()) {
+    const redis = await getRedis();
+    const ok = await redis.set(`${TELEGRAM_MSG_PREFIX}${messageKey}`, "1", {
+      nx: true,
+      ex: ttlSeconds,
+    });
+    return ok === "OK";
+  }
+  return updateStore((data) => {
+    data.processedSlackMessages = data.processedSlackMessages ?? [];
+    const key = `tg:${messageKey}`;
+    if (data.processedSlackMessages.includes(key)) return false;
+    data.processedSlackMessages.unshift(key);
     data.processedSlackMessages = data.processedSlackMessages.slice(0, 2000);
     return true;
   });

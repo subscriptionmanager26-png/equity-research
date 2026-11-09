@@ -5,12 +5,11 @@ import { NextResponse } from "next/server";
 import { continueAfterResponse } from "@/lib/after-response";
 import { getConfig } from "@/lib/config";
 import {
-  findDispatchedJobForAgent,
   markWebhookSeen,
   runArtifactFollowUp,
   settleAgentJob,
 } from "@/lib/cursor-settle";
-import { listJobs } from "@/lib/jobs";
+import { findDispatchedJobForAgentId } from "@/lib/jobs";
 import { timingSafeEqual } from "@/lib/relay";
 
 export const maxDuration = 60;
@@ -84,8 +83,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const jobs = await listJobs();
-  const job = findDispatchedJobForAgent(jobs, agentId);
+  const job = await findDispatchedJobForAgentId(agentId);
   if (!job) {
     console.info(
       `[relay] Status webhook for ${agentId} (${status}) — no dispatched job matched`,
