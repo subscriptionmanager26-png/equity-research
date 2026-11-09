@@ -3,13 +3,14 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 import { publicStatus } from "@/lib/config";
+import { listJobs } from "@/lib/jobs";
 import { getStore } from "@/lib/store";
 import { replyUrl } from "@/lib/cursor";
 import { listSlackInstalls } from "@/lib/slack-install";
 
 export async function GET() {
   try {
-    const store = await getStore();
+    const [store, jobs] = await Promise.all([getStore(), listJobs()]);
     const status = publicStatus();
     const slackInstalls = await listSlackInstalls().catch(() => []);
     return NextResponse.json({
@@ -40,7 +41,7 @@ export async function GET() {
         displayName: chat.displayName,
         lastMessageAt: chat.lastMessageAt,
       })),
-      jobCount: store.jobs.length,
+      jobCount: jobs.length,
       slackLastPollAt: store.slackLastPollAt ?? null,
       slackPollNextScheduledAt: store.slackPollNextScheduledAt ?? null,
     });
