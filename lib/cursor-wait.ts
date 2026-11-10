@@ -7,15 +7,20 @@ import {
 } from "@/lib/cursor-api";
 import { settleAgentJob, isSettling, runArtifactFollowUp } from "@/lib/cursor-settle";
 import { addJobEvent, getJob, listJobs, reclaimStaleDeliveringJobs } from "@/lib/jobs";
+import {
+  SETTLE_BACKOFF_SECONDS,
+  SETTLE_POLL_MAX_ATTEMPTS,
+} from "@/lib/qstash";
 import { deliverReply } from "@/lib/relay";
 
 declare global {
   var __relayCursorWaiter: { started: boolean; loopActive?: boolean } | undefined;
 }
 
-/** Local fallback only — match production settle cadence (30s / ~5m window). */
-const POLL_MS = 30_000;
-const TIMEOUT_MS = 5 * 60 * 1000;
+/** Local-only fallback. Production settle is webhook + QStash backoff. */
+const SCAN_MS = 60_000;
+const TIMEOUT_MS =
+  SETTLE_BACKOFF_SECONDS.reduce((sum, seconds) => sum + seconds, 0) * 1000;
 const inFlight = new Set<string>();
 
 export function startCursorWaiter() {
@@ -24,7 +29,7 @@ export function startCursorWaiter() {
     return;
   }
   globalThis.__relayCursorWaiter = { started: true, loopActive: true };
-  console.info("[relay] Cursor waiter started (polling fallback)");
+  console.info("[relay] Cursor waiter started (local polling fallback)");
   void loop().finally(() => {
     if (globalThis.__relayCursorWaiter) {
       globalThis.__relayCursorWaiter.loopActive = false;
@@ -53,7 +58,7 @@ async function loop() {
     } catch (error) {
       console.error("[relay] Cursor waiter scan failed", error);
     }
-    await sleep(POLL_MS);
+    await sleep(SCAN_MS);
   }
 }
 
@@ -65,10 +70,21 @@ export async function watchDispatchedJob(
   return waitAndSettle(jobId, agentId, startedAt);
 }
 
+function backoffMsForAge(ageMs: number) {
+  let elapsed = 0;
+  for (let i = 0; i < SETTLE_POLL_MAX_ATTEMPTS; i += 1) {
+    const stepMs = SETTLE_BACKOFF_SECONDS[i]! * 1000;
+    if (ageMs < elapsed + stepMs) return stepMs;
+    elapsed += stepMs;
+  }
+  return SETTLE_BACKOFF_SECONDS[SETTLE_POLL_MAX_ATTEMPTS - 1]! * 1000;
+}
+
 async function waitAndSettle(jobId: string, agentId: string, startedAt: number) {
   const job = await getJob(jobId);
   while (true) {
-    if (Date.now() - startedAt > TIMEOUT_MS) {
+    const ageMs = Date.now() - startedAt;
+    if (ageMs > TIMEOUT_MS) {
       const current = await getJob(jobId);
       if (current?.status === "dispatched") {
         await addJobEvent(
@@ -97,13 +113,13 @@ async function waitAndSettle(jobId: string, agentId: string, startedAt: number) 
 
       const agent = await getAgent(agentId);
       if (!agentIsDone(agent.status)) {
-        await sleep(POLL_MS);
+        await sleep(backoffMsForAge(ageMs));
         continue;
       }
       if (current.followUpAgentId) {
         const conversation = await getAgentConversation(agentId);
         if (!conversationIncludesPrompt(conversation.messages ?? [], current.prompt)) {
-          await sleep(POLL_MS);
+          await sleep(backoffMsForAge(ageMs));
           continue;
         }
       }
@@ -114,7 +130,7 @@ async function waitAndSettle(jobId: string, agentId: string, startedAt: number) 
       return;
     } catch (error) {
       console.error(`[relay] Cursor wait failed for ${agentId}`, error);
-      await sleep(POLL_MS);
+      await sleep(backoffMsForAge(ageMs));
     }
   }
 }

@@ -173,7 +173,7 @@ export async function completeJobDispatch(job: Job): Promise<Job> {
         error,
       );
     }
-    // Status webhook is primary; QStash settle chain backs it up every 30s for ~5m.
+    // Status webhook is primary; sparse QStash backoff catches missed webhooks.
     if (qstashConfigured() && saved.status === "dispatched") {
       await enqueueJobSettle(saved.id, 1).catch((error) => {
         console.error(`[relay] Failed to enqueue settle for ${saved.id}`, error);

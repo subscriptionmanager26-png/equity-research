@@ -23,7 +23,7 @@ async function handlePoll(request: Request) {
   return NextResponse.json({
     ...slack,
     note:
-      "Manual poll only. Production ingress is Slack Events API at /api/slack/events. Cursor settle is webhook + per-job 30s QStash chain.",
+      "Manual poll only. Production ingress is Slack Events API at /api/slack/events. Cursor settle is webhook + sparse QStash backoff.",
   });
 }
 

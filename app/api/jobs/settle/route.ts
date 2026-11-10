@@ -5,6 +5,7 @@ import { getJob } from "@/lib/jobs";
 import {
   enqueueJobSettle,
   SETTLE_POLL_MAX_ATTEMPTS,
+  settleDelayForAttempt,
   verifyQStashRequest,
 } from "@/lib/qstash";
 
@@ -14,7 +15,8 @@ type SettleBody = { jobId?: string; attempt?: number };
 
 /**
  * Per-job settle backup after dispatch.
- * Status webhook is primary; this runs every ~30s for up to ~5 minutes.
+ * Cursor status webhook is primary; this only catches missed webhooks via
+ * a sparse exponential backoff chain (not a fixed poll tick).
  */
 export async function POST(request: Request) {
   const rawBody = await request.text();
@@ -72,9 +74,9 @@ export async function POST(request: Request) {
     });
   }
 
-  // Still waiting — chain another check until the 5-minute window ends.
-  if (attempt < SETTLE_POLL_MAX_ATTEMPTS) {
-    await enqueueJobSettle(jobId, attempt + 1).catch((error) => {
+  const nextAttempt = attempt + 1;
+  if (nextAttempt <= SETTLE_POLL_MAX_ATTEMPTS) {
+    await enqueueJobSettle(jobId, nextAttempt).catch((error) => {
       console.error(`[relay] Failed to re-enqueue settle for ${jobId}`, error);
     });
   }
@@ -84,6 +86,11 @@ export async function POST(request: Request) {
     jobId,
     attempt,
     status: "waiting",
-    nextAttempt: attempt < SETTLE_POLL_MAX_ATTEMPTS ? attempt + 1 : null,
+    nextAttempt:
+      nextAttempt <= SETTLE_POLL_MAX_ATTEMPTS ? nextAttempt : null,
+    nextDelaySeconds:
+      nextAttempt <= SETTLE_POLL_MAX_ATTEMPTS
+        ? settleDelayForAttempt(nextAttempt)
+        : null,
   });
 }

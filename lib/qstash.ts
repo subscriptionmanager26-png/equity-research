@@ -1,9 +1,21 @@
 import { getConfig } from "@/lib/config";
 
-/** Backup settle cadence after dispatch (status webhook is primary). */
-export const SETTLE_POLL_INTERVAL_SECONDS = 30;
-/** 10 × 30s ≈ 5 minutes of post-message settle checks. */
-export const SETTLE_POLL_MAX_ATTEMPTS = 10;
+/**
+ * Backup settle delays (seconds) before each attempt after dispatch.
+ * Primary settle path is the Cursor status webhook — this chain only fires
+ * if the webhook is missed. Sparse exponential backoff covers quick agents
+ * and long equity-research runs without scanning Redis/Cursor on a fixed tick.
+ */
+export const SETTLE_BACKOFF_SECONDS = [60, 120, 300, 600, 1200] as const;
+export const SETTLE_POLL_MAX_ATTEMPTS = SETTLE_BACKOFF_SECONDS.length;
+
+export function settleDelayForAttempt(attempt: number): number {
+  if (attempt < 1) return SETTLE_BACKOFF_SECONDS[0];
+  if (attempt > SETTLE_POLL_MAX_ATTEMPTS) {
+    return SETTLE_BACKOFF_SECONDS[SETTLE_POLL_MAX_ATTEMPTS - 1];
+  }
+  return SETTLE_BACKOFF_SECONDS[attempt - 1];
+}
 
 export function qstashToken() {
   return process.env.QSTASH_TOKEN?.trim() || "";
@@ -61,7 +73,8 @@ export async function enqueueJobDispatch(
 
 /**
  * Schedule a single-job settle check. Call after dispatch with attempt=1;
- * the settle route re-enqueues until the agent answers or max attempts.
+ * the settle route re-enqueues with backoff until the agent answers or the
+ * schedule is exhausted.
  */
 export async function enqueueJobSettle(
   jobId: string,
@@ -77,8 +90,7 @@ export async function enqueueJobSettle(
   }
   const { Client } = await import("@upstash/qstash");
   const client = new Client({ token });
-  const delay =
-    options?.delaySeconds ?? SETTLE_POLL_INTERVAL_SECONDS;
+  const delay = options?.delaySeconds ?? settleDelayForAttempt(attempt);
   return client.publishJSON({
     url: qstashSettleUrl(),
     body: { jobId, attempt },

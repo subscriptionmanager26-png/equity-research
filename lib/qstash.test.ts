@@ -4,8 +4,9 @@ import { describe, it } from "node:test";
 import {
   qstashConfigured,
   qstashToken,
-  SETTLE_POLL_INTERVAL_SECONDS,
+  SETTLE_BACKOFF_SECONDS,
   SETTLE_POLL_MAX_ATTEMPTS,
+  settleDelayForAttempt,
 } from "./qstash";
 
 describe("qstash helpers", () => {
@@ -23,12 +24,13 @@ describe("qstash helpers", () => {
     }
   });
 
-  it("settle backup is ~30s for ~5 minutes", () => {
-    assert.equal(SETTLE_POLL_INTERVAL_SECONDS, 30);
-    assert.equal(SETTLE_POLL_MAX_ATTEMPTS, 10);
-    assert.equal(
-      SETTLE_POLL_INTERVAL_SECONDS * SETTLE_POLL_MAX_ATTEMPTS,
-      300,
-    );
+  it("settle backup uses sparse exponential backoff", () => {
+    assert.deepEqual([...SETTLE_BACKOFF_SECONDS], [60, 120, 300, 600, 1200]);
+    assert.equal(SETTLE_POLL_MAX_ATTEMPTS, 5);
+    assert.equal(settleDelayForAttempt(1), 60);
+    assert.equal(settleDelayForAttempt(3), 300);
+    assert.equal(settleDelayForAttempt(5), 1200);
   });
 });
+
+

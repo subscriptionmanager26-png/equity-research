@@ -131,6 +131,7 @@ export function Dashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const jobsRef = useRef<Job[]>([]);
+  const kickPollRef = useRef<(() => void) | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -170,13 +171,16 @@ export function Dashboard() {
     let cancelled = false;
     let timer: number | undefined;
 
+    // Dashboard refresh is UI-only — settle happens via webhook + QStash backoff.
+    // Poll only while a job is in flight and the tab is visible.
     const nextDelay = (ok: boolean) => {
-      if (!ok) return 60_000;
-      // Listen for messages; only poll every 30s while a job is in flight.
-      return hasInFlightJobs(jobsRef.current) ? 30_000 : 5 * 60_000;
+      if (!ok) return 120_000;
+      if (!hasInFlightJobs(jobsRef.current)) return null;
+      return 60_000;
     };
 
-    const tick = async (delayMs: number) => {
+    const tick = async (delayMs: number | null) => {
+      if (delayMs === null) return;
       timer = window.setTimeout(async () => {
         if (cancelled) return;
         let ok = true;
@@ -187,18 +191,30 @@ export function Dashboard() {
       }, delayMs);
     };
 
+    const restart = (ok: boolean) => {
+      if (timer) window.clearTimeout(timer);
+      void tick(nextDelay(ok));
+    };
+
+    kickPollRef.current = () => restart(true);
+
     void (async () => {
       const ok = await refresh();
-      if (!cancelled) void tick(nextDelay(ok));
+      if (!cancelled) restart(ok);
     })();
 
     const onVisible = () => {
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState !== "visible") return;
+      void (async () => {
+        const ok = await refresh();
+        if (!cancelled) restart(ok);
+      })();
     };
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       cancelled = true;
+      kickPollRef.current = null;
       if (timer) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -221,6 +237,7 @@ export function Dashboard() {
       }
       setText("");
       await refresh();
+      kickPollRef.current?.();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Send failed");
     } finally {
@@ -238,6 +255,7 @@ export function Dashboard() {
         throw new Error(payload.error ?? "Simulate failed");
       }
       await refresh();
+      kickPollRef.current?.();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Simulate failed");
     } finally {

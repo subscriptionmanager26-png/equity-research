@@ -5,7 +5,7 @@ import { acquireCursorSlot, releaseCursorSlot } from "@/lib/cursor-slots";
 import { enqueueJobDispatch, verifyQStashRequest } from "@/lib/qstash";
 import { completeJobDispatch } from "@/lib/relay";
 
-/** Cursor create can take a while; settle is via status webhook + 30s QStash settle chain. */
+/** Cursor create can take a while; settle is via status webhook + sparse QStash backoff. */
 export const maxDuration = 60;
 
 type DispatchBody = { jobId?: string };
