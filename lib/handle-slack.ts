@@ -92,8 +92,17 @@ async function resolveSlackTeamContext(
   const teamId = options?.teamId ?? event.team ?? "";
   let mentionUserId = options?.mentionUserId;
   if (teamId && !mentionUserId) {
-    const install = await getSlackInstall(teamId);
-    mentionUserId = install?.botUserId;
+    try {
+      const install = await getSlackInstall(teamId);
+      mentionUserId = install?.botUserId;
+    } catch (error) {
+      // OAuth install lookup is optional when SLACK_BOT_TOKEN is set.
+      console.error("[relay] Slack install lookup failed", error);
+    }
+  }
+  if (!mentionUserId) {
+    const bot = await getSlackBotIdentity(teamId || undefined).catch(() => null);
+    mentionUserId = bot?.userId;
   }
   return { teamId, mentionUserId };
 }
@@ -113,16 +122,6 @@ export async function handleSlackEvent(
     return { ignored: true, reason: "relay_outbound" };
   }
   const teamId = ctx.teamId || event.team || "";
-  const dedupeKey = slackInboundDedupeKey(
-    event.channel,
-    event.ts,
-    teamId || undefined,
-  );
-  if (!(await markSlackMessageProcessed(dedupeKey))) {
-    return { ignored: true, reason: "duplicate_message" };
-  }
-
-  // Redis NX claim above is the duplicate gate — skip a full job-list scan.
 
   const enriched = await enrichSlackThreadTs(event, teamId || undefined);
   const threadTs = isSlackThreadReply(enriched) ? enriched.thread_ts : undefined;
@@ -141,16 +140,29 @@ export async function handleSlackEvent(
     mentionUserId: ctx.mentionUserId,
   });
 
+  if (intent === "ignore") {
+    console.info(
+      `[relay] Slack event ignored (${enriched.channel}${enriched.channel_type ? `:${enriched.channel_type}` : ""}): not_pocketedge — ${(enriched.text ?? "").slice(0, 80)}`,
+    );
+    return { ignored: true, reason: "not_pocketedge" };
+  }
+
+  // Claim only after we intend to act. Otherwise a channel `message` event that
+  // looks unaddressed (Slack often strips the @name from <@U…>) burns the
+  // channel:ts key and the later `app_mention` for the same message is dropped.
+  const dedupeKey = slackInboundDedupeKey(
+    enriched.channel,
+    enriched.ts,
+    teamId || undefined,
+  );
+  if (!(await markSlackMessageProcessed(dedupeKey))) {
+    return { ignored: true, reason: "duplicate_message" };
+  }
+
   if (intent === "follow_up") {
     return handleThreadMessage(enriched, ctx);
   }
-  if (intent === "mention") {
-    return handleMention(enriched, ctx);
-  }
-  console.info(
-    `[relay] Slack event ignored (${enriched.channel}${enriched.channel_type ? `:${enriched.channel_type}` : ""}): not_pocketedge — ${(enriched.text ?? "").slice(0, 80)}`,
-  );
-  return { ignored: true, reason: "not_pocketedge" };
+  return handleMention(enriched, ctx);
 }
 
 async function handleMention(

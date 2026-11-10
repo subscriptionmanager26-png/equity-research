@@ -74,6 +74,32 @@ describe("classifySlackEvent", () => {
     );
   });
 
+  it("needs bot user id to treat bare <@U…> channel messages as addressed", () => {
+    assert.equal(
+      classifySlackEvent({
+        type: "message",
+        text: "<@U0BS6CUGZLP> analyze nvda",
+        ts: "1.0",
+        channelId: "C0CHANNEL",
+        channelType: "channel",
+        trackedThread: false,
+      }),
+      "ignore",
+    );
+    assert.equal(
+      classifySlackEvent({
+        type: "message",
+        text: "<@U0BS6CUGZLP> analyze nvda",
+        ts: "1.0",
+        channelId: "C0CHANNEL",
+        channelType: "channel",
+        trackedThread: false,
+        mentionUserId: "U0BS6CUGZLP",
+      }),
+      "mention",
+    );
+  });
+
   it("starts a new job only for pocketedge outside a tracked thread", () => {
     assert.equal(
       classifySlackEvent({

@@ -40,7 +40,10 @@ function decryptToken(payload: string) {
 }
 
 async function redis() {
-  const { getRedis } = await import("@/lib/store");
+  const { getRedis, kvEnabled } = await import("@/lib/store");
+  if (!kvEnabled()) {
+    throw new Error("Redis unavailable for Slack installs");
+  }
   return getRedis();
 }
 
