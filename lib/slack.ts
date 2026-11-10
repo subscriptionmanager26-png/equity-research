@@ -155,6 +155,11 @@ export function messageTriggersRelay(
   return new RegExp(`^[^\\n]{0,40}@?${word}\\b`, "i").test(head);
 }
 
+/**
+ * Only wake when the user explicitly tags PocketEdge.
+ * Slack delivers that as `app_mention`, or as a message containing `<@BOTID>` / `@pocketedge`.
+ * DMs and thread replies without a tag are ignored (thread context is still attached when tagged).
+ */
 export function slackMessageIsAddressed(input: {
   type: string;
   text?: string;
@@ -163,13 +168,9 @@ export function slackMessageIsAddressed(input: {
   mentionUserId?: string;
 }) {
   if (input.type === "app_mention") return true;
-  if (input.channelType === "im" || input.channelType === "mpim") return true;
-  const opts = { mentionUserId: input.mentionUserId };
-  const text = input.text ?? "";
-  if (isSlackPublicChannel(input)) {
-    return explicitlyMentionsRelay(text, opts);
-  }
-  return messageTriggersRelay(text, opts);
+  return explicitlyMentionsRelay(input.text ?? "", {
+    mentionUserId: input.mentionUserId,
+  });
 }
 
 async function loadSlackIdentity(

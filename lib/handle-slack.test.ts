@@ -20,7 +20,7 @@ describe("classifySlackEvent", () => {
     );
   });
 
-  it("treats a DM thread reply as a follow-up even without pocketedge", () => {
+  it("ignores DM thread replies without @pocketedge", () => {
     assert.equal(
       classifySlackEvent({
         type: "message",
@@ -30,11 +30,11 @@ describe("classifySlackEvent", () => {
         channelId: "D08DM",
         trackedThread: true,
       }),
-      "follow_up",
+      "ignore",
     );
   });
 
-  it("treats a pocketedge reply in a tracked channel thread as a follow-up, not a new job", () => {
+  it("treats a pocketedge reply in a tracked channel thread as a follow-up", () => {
     assert.equal(
       classifySlackEvent({
         type: "message",
@@ -48,7 +48,7 @@ describe("classifySlackEvent", () => {
     );
   });
 
-  it("treats search app_mention hits in a tracked thread as follow-ups", () => {
+  it("treats app_mention in a tracked thread as a follow-up", () => {
     assert.equal(
       classifySlackEvent({
         type: "app_mention",
@@ -74,7 +74,7 @@ describe("classifySlackEvent", () => {
     );
   });
 
-  it("needs bot user id to treat bare <@U…> channel messages as addressed", () => {
+  it("treats bare <@bot> channel messages as addressed when bot user id is known", () => {
     assert.equal(
       classifySlackEvent({
         type: "message",
@@ -123,7 +123,7 @@ describe("classifySlackEvent", () => {
     );
   });
 
-  it("ignores plain pocketedge in a channel without an @mention", () => {
+  it("ignores plain pocketedge without an @mention", () => {
     assert.equal(
       classifySlackEvent({
         type: "message",
@@ -148,11 +148,22 @@ describe("classifySlackEvent", () => {
     );
   });
 
-  it("treats any Events API bot DM as a trigger without pocketedge", () => {
+  it("ignores untagged DMs", () => {
     assert.equal(
       classifySlackEvent({
         type: "message",
         text: "summarize NVDA earnings",
+        ts: "1.0",
+        channelId: "D0BOTDM",
+        channelType: "im",
+        trackedThread: false,
+      }),
+      "ignore",
+    );
+    assert.equal(
+      classifySlackEvent({
+        type: "message",
+        text: "@pocketedge summarize NVDA earnings",
         ts: "1.0",
         channelId: "D0BOTDM",
         channelType: "im",

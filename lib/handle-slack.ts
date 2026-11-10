@@ -60,6 +60,7 @@ export function classifySlackEvent(input: {
   if (input.type !== "app_mention" && input.type !== "message") {
     return "ignore" as const;
   }
+  // Hard rule: only @pocketedge / app_mention. Untagged thread chatter is ignored.
   const addressed = slackMessageIsAddressed({
     type: input.type,
     text: input.text,
@@ -67,17 +68,11 @@ export function classifySlackEvent(input: {
     channelType: input.channelType,
     mentionUserId: input.mentionUserId,
   });
-  const inDm = Boolean(
-    input.channelId?.startsWith("D") || input.channelType === "im",
-  );
+  if (!addressed) return "ignore" as const;
   if (isSlackThreadReply(input) && input.trackedThread) {
-    if (addressed) return "follow_up" as const;
-    // DMs with you are a private thread; channels are shared — don't hijack chatter.
-    if (inDm) return "follow_up" as const;
-    return "ignore" as const;
+    return "follow_up" as const;
   }
-  if (addressed) return "mention" as const;
-  return "ignore" as const;
+  return "mention" as const;
 }
 
 async function resolveTrackedThread(channelId: string, threadTs: string) {

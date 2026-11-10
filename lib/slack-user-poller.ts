@@ -250,7 +250,7 @@ async function pollSearchTriggers(
   }
 }
 
-/** Only threads Relay already started — catches follow-ups without pocketedge. */
+/** Only threads Relay already started — still requires @pocketedge on each reply. */
 async function pollTrackedThreads(
   actorUserId: string,
   jobIds: string[],
@@ -427,13 +427,8 @@ async function processMessage(
     channelId: event.channel,
     channelType: event.channel_type,
   });
-  if (ownMessage && !addressed) {
-    const threadTs = isSlackThreadReply(event) ? event.thread_ts : undefined;
-    const inDm = event.channel.startsWith("D");
-    if (!threadTs || !inDm) return;
-    const tracked = await getSlackThread(event.channel, threadTs);
-    if (!tracked) return;
-  }
+  // Same rule as Events API: ignore unless @pocketedge is tagged.
+  if (!addressed) return;
   if (!ownMessage && isSlackBotMessage(event, actorUserId)) return;
   if (await isSlackInboundMessageProcessed(messageKey)) return;
   if (ctx && ctx.remainingNew <= 0) return;
