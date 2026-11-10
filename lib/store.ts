@@ -58,7 +58,9 @@ function redisCredentials() {
 }
 
 export function kvEnabled() {
-  // Quota / outage: treat Redis as off so callers fall through to Blob.
+  // Forced Blob/file, or quota/outage: treat Redis as off.
+  const forced = (process.env.RELAY_STORE ?? "").trim().toLowerCase();
+  if (forced === "blob" || forced === "file") return false;
   if (isRedisFailoverActive()) return false;
   return Boolean(redisCredentials());
 }

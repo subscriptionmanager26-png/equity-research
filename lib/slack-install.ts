@@ -39,12 +39,16 @@ function decryptToken(payload: string) {
   );
 }
 
-async function redis() {
+async function redisOrNull() {
   const { getRedis, kvEnabled } = await import("@/lib/store");
-  if (!kvEnabled()) {
-    throw new Error("Redis unavailable for Slack installs");
+  const { noteRedisError } = await import("@/lib/redis-failover");
+  if (!kvEnabled()) return null;
+  try {
+    return await getRedis();
+  } catch (error) {
+    noteRedisError(error);
+    return null;
   }
-  return getRedis();
 }
 
 export async function saveSlackInstall(input: {
@@ -65,22 +69,33 @@ export async function saveSlackInstall(input: {
     installedAt: new Date().toISOString(),
     isActive: true,
   };
-  const client = await redis();
+  const client = await redisOrNull();
+  if (!client) {
+    throw new Error("Redis unavailable — cannot persist Slack install");
+  }
   await client.set(`${INSTALL_PREFIX}${input.teamId}`, install);
   await client.sadd(INSTALL_INDEX, input.teamId);
   return install;
 }
 
+/** Optional OAuth install lookup. Returns undefined when Redis is down so env bot token is used. */
 export async function getSlackInstall(
   teamId: string,
 ): Promise<SlackWorkspaceInstall | undefined> {
   if (!teamId) return undefined;
-  const client = await redis();
-  const stored = await client.get<SlackWorkspaceInstall>(
-    `${INSTALL_PREFIX}${teamId}`,
-  );
-  if (!stored || !stored.isActive) return undefined;
-  return stored;
+  const client = await redisOrNull();
+  if (!client) return undefined;
+  try {
+    const stored = await client.get<SlackWorkspaceInstall>(
+      `${INSTALL_PREFIX}${teamId}`,
+    );
+    if (!stored || !stored.isActive) return undefined;
+    return stored;
+  } catch (error) {
+    const { noteRedisError } = await import("@/lib/redis-failover");
+    noteRedisError(error);
+    return undefined;
+  }
 }
 
 export async function getSlackInstallBotToken(teamId: string) {
@@ -90,26 +105,39 @@ export async function getSlackInstallBotToken(teamId: string) {
 }
 
 export async function deactivateSlackInstall(teamId: string) {
-  const client = await redis();
+  const client = await redisOrNull();
+  if (!client) return;
   const key = `${INSTALL_PREFIX}${teamId}`;
-  const stored = await client.get<SlackWorkspaceInstall>(key);
-  if (!stored) return;
-  await client.set(key, {
-    ...stored,
-    isActive: false,
-    botTokenEnc: "",
-    uninstalledAt: new Date().toISOString(),
-  });
-  await client.srem(INSTALL_INDEX, teamId);
+  try {
+    const stored = await client.get<SlackWorkspaceInstall>(key);
+    if (!stored) return;
+    await client.set(key, {
+      ...stored,
+      isActive: false,
+      botTokenEnc: "",
+      uninstalledAt: new Date().toISOString(),
+    });
+    await client.srem(INSTALL_INDEX, teamId);
+  } catch (error) {
+    const { noteRedisError } = await import("@/lib/redis-failover");
+    noteRedisError(error);
+  }
 }
 
 export async function listSlackInstalls() {
-  const client = await redis();
-  const teamIds = await client.smembers(INSTALL_INDEX);
-  const installs: SlackWorkspaceInstall[] = [];
-  for (const teamId of teamIds) {
-    const install = await getSlackInstall(teamId);
-    if (install) installs.push(install);
+  const client = await redisOrNull();
+  if (!client) return [];
+  try {
+    const teamIds = await client.smembers(INSTALL_INDEX);
+    const installs: SlackWorkspaceInstall[] = [];
+    for (const teamId of teamIds) {
+      const install = await getSlackInstall(teamId);
+      if (install) installs.push(install);
+    }
+    return installs;
+  } catch (error) {
+    const { noteRedisError } = await import("@/lib/redis-failover");
+    noteRedisError(error);
+    return [];
   }
-  return installs;
 }
