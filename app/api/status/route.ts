@@ -3,14 +3,14 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 import { publicStatus } from "@/lib/config";
-import { listJobs } from "@/lib/jobs";
+import { getJobCount } from "@/lib/jobs";
 import { getStore } from "@/lib/store";
 import { replyUrl } from "@/lib/cursor";
 import { listSlackInstalls } from "@/lib/slack-install";
 
 export async function GET() {
   try {
-    const [store, jobs] = await Promise.all([getStore(), listJobs()]);
+    const [store, jobCount] = await Promise.all([getStore(), getJobCount()]);
     const status = publicStatus();
     const slackInstalls = await listSlackInstalls().catch(() => []);
     return NextResponse.json({
@@ -41,14 +41,14 @@ export async function GET() {
         displayName: chat.displayName,
         lastMessageAt: chat.lastMessageAt,
       })),
-      jobCount: jobs.length,
+      jobCount,
       slackLastPollAt: store.slackLastPollAt ?? null,
       slackPollNextScheduledAt: store.slackPollNextScheduledAt ?? null,
     });
   } catch (error) {
     console.error("[relay] /api/status store read failed", error);
     return NextResponse.json(
-      { ...publicStatus(), storeError: "blob_unavailable" },
+      { ...publicStatus(), storeError: "redis_unavailable" },
       { status: 200 },
     );
   }

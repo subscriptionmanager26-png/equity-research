@@ -1,11 +1,8 @@
 import { ingestJob } from "@/lib/relay";
 import { getConfig } from "@/lib/config";
 import {
-  findSlackThreadJob,
-  findJobForSlackInbound,
   getJob,
   getSlackThread,
-  listJobs,
   markSlackMessageProcessed,
   rememberSlackThread,
 } from "@/lib/jobs";
@@ -84,16 +81,8 @@ export function classifySlackEvent(input: {
 }
 
 async function resolveTrackedThread(channelId: string, threadTs: string) {
-  const stored = await getSlackThread(channelId, threadTs);
-  if (stored) return stored;
-  const job = findSlackThreadJob(await listJobs(), channelId, threadTs);
-  if (!job) return undefined;
-  return {
-    channelId,
-    threadTs,
-    lastJobId: job.id,
-    updatedAt: job.updatedAt,
-  };
+  // Prefer the Slack thread index — avoid scanning the full recent-jobs list.
+  return getSlackThread(channelId, threadTs);
 }
 
 async function resolveSlackTeamContext(
@@ -133,14 +122,7 @@ export async function handleSlackEvent(
     return { ignored: true, reason: "duplicate_message" };
   }
 
-  const existingJob = findJobForSlackInbound(
-    await listJobs(),
-    event.channel,
-    event.ts,
-  );
-  if (existingJob) {
-    return { ignored: true, reason: "already_jobbed", jobId: existingJob.id };
-  }
+  // Redis NX claim above is the duplicate gate — skip a full job-list scan.
 
   const enriched = await enrichSlackThreadTs(event, teamId || undefined);
   const threadTs = isSlackThreadReply(enriched) ? enriched.thread_ts : undefined;

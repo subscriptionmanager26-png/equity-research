@@ -4,7 +4,6 @@ import {
   getSlackPollCursor,
   getSlackThread,
   listSlackThreads,
-  rememberSlackThreadsFromJobs,
   setSlackPollCursor,
 } from "@/lib/jobs";
 import {
@@ -109,7 +108,7 @@ export async function pollSlackOnce(options?: {
         ? MAX_NEW_MESSAGES_EVENTS_PRIMARY
         : MAX_NEW_MESSAGES_PER_VERCEL_POLL,
     };
-    await hydrateSlackThreadsFromJobs();
+    // Thread index is written on job create/upsert — skip a full job-list rehydrate here.
     await runPollStep("channels", () => pollConfiguredChannels(actor.userId, jobIds, ctx));
     await runPollStep("search", () => pollSearchTriggers(actor.userId, jobIds, ctx));
     await runPollStep("threads", () => pollTrackedThreads(actor.userId, jobIds, ctx));
@@ -119,10 +118,6 @@ export async function pollSlackOnce(options?: {
       console.error("[relay] Slack poll slot release failed", error);
     });
   }
-}
-
-async function hydrateSlackThreadsFromJobs() {
-  await rememberSlackThreadsFromJobs();
 }
 
 async function loop(actorUserId: string) {

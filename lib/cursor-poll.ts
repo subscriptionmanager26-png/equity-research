@@ -1,5 +1,5 @@
 import { listJobs, reclaimStaleDeliveringJobs } from "@/lib/jobs";
-import { pruneMissingRecentJobs } from "@/lib/job-store";
+import { ACTIVE_JOB_SCAN_LIMIT, pruneMissingRecentJobs } from "@/lib/job-store";
 import { extractAgentId } from "@/lib/cursor-api";
 import {
   settleAgentJob,
@@ -29,7 +29,7 @@ export async function retryStaleQueuedJobs(opts?: { max?: number }) {
   const now = Date.now();
   const max = opts?.max ?? 2;
   let retried = 0;
-  for (const job of await listJobs()) {
+  for (const job of await listJobs(ACTIVE_JOB_SCAN_LIMIT)) {
     if (retried >= max) break;
     if (!isStaleQueuedJob(job, now)) continue;
     console.info(`[relay] Retrying stale queued job ${job.id}`);
@@ -44,10 +44,10 @@ export async function retryStaleQueuedJobs(opts?: { max?: number }) {
 /** Settle any dispatched jobs whose Cursor agent has finished (cron / manual backup). */
 export async function pollDispatchedJobs(opts?: { maxMs?: number }) {
   const deadline = opts?.maxMs ? Date.now() + opts.maxMs : Number.POSITIVE_INFINITY;
-  const pruned = await pruneMissingRecentJobs().catch(() => 0);
+  const pruned = await pruneMissingRecentJobs(25).catch(() => 0);
   const reclaimed = await reclaimStaleDeliveringJobs(120_000);
   const queuedRetried = await retryStaleQueuedJobs();
-  const jobs = await listJobs();
+  const jobs = await listJobs(ACTIVE_JOB_SCAN_LIMIT);
   let settled = 0;
   let artifactFollowUps = 0;
 

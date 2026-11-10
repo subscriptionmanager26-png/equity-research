@@ -1,6 +1,7 @@
 import { getConfig } from "@/lib/config";
 import { ingestJob } from "@/lib/relay";
 import { findTelegramFollowUpJob, listJobs, logInbound, rememberChat } from "@/lib/jobs";
+import { ACTIVE_JOB_SCAN_LIMIT, DASHBOARD_JOB_LIMIT } from "@/lib/job-store";
 import { claimTelegramInboundMessage, getStore } from "@/lib/store";
 import {
   attachmentsFromMessage,
@@ -52,7 +53,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
 
   if (text === "/status") {
     await logInbound({ chatId, text, kind: "command" });
-    const jobs = (await listJobs())
+    const jobs = (await listJobs(DASHBOARD_JOB_LIMIT))
       .filter((job) => job.chatId === chatId)
       .slice(0, 5);
     if (jobs.length === 0) {
@@ -120,7 +121,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
 
   const parent = message.reply_to_message
     ? findTelegramFollowUpJob(
-        await listJobs(),
+        await listJobs(ACTIVE_JOB_SCAN_LIMIT),
         chatId,
         message.reply_to_message.message_id,
       )

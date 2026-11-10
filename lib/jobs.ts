@@ -1,10 +1,14 @@
 import {
+  ACTIVE_JOB_SCAN_LIMIT,
   capJobEvents,
   claimSettleSlot,
+  countRecentJobs,
+  DASHBOARD_JOB_LIMIT,
   getJobIdForAgent,
-  indexAgentJob,
+  isJobsMigrated,
   jobsBackendIsRedis,
   listRecentJobRecords,
+  markJobsMigratedCached,
   MAX_JOB_EVENTS,
   migrateJobsFromBlobIfNeeded,
   readJobRecord,
@@ -23,7 +27,6 @@ import type {
 
 const MAX_JOBS_FILE = 100;
 const MAX_SLACK_EVENT_IDS = 500;
-const MAX_RECENT_JOBS = 500;
 
 function pushJobEvent(job: Job, event: Omit<JobEvent, "at"> & { at?: string }, at: string) {
   job.events = job.events ?? [];
@@ -38,13 +41,17 @@ function pushJobEvent(job: Job, event: Omit<JobEvent, "at"> & { at?: string }, a
 }
 
 let migrationPromise: Promise<void> | undefined;
+let migrationCooldownUntil = 0;
 
 async function ensureJobMigration() {
   if (!kvEnabled()) return;
+  if (await isJobsMigrated()) return;
+  if (Date.now() < migrationCooldownUntil) return;
   if (!migrationPromise) {
     migrationPromise = (async () => {
       const data = await getStore();
       await migrateJobsFromBlobIfNeeded(data.jobs);
+      markJobsMigratedCached();
       if (data.jobs?.length || data.processedSlackMessages?.length) {
         await updateStore((store) => {
           store.jobs = [];
@@ -52,12 +59,25 @@ async function ensureJobMigration() {
           store.processedSlackMessages = [];
         });
       }
-    })().catch((error) => {
-      migrationPromise = undefined;
-      console.error("[relay] Job migration failed", error);
-    });
+    })()
+      .catch((error) => {
+        migrationCooldownUntil = Date.now() + 60_000;
+        console.error("[relay] Job migration failed", error);
+      })
+      .finally(() => {
+        migrationPromise = undefined;
+      });
   }
   await migrationPromise;
+}
+
+export async function getJobCount(): Promise<number> {
+  await ensureJobMigration();
+  if (jobsBackendIsRedis()) {
+    return countRecentJobs();
+  }
+  const data = await getStore();
+  return data.jobs.length;
 }
 
 export function newJobId() {
@@ -204,9 +224,6 @@ export async function addJobEvent(
       }
     }
     const saved = await writeJobRecord(capJobEvents(job));
-    if (saved.cursorAgentId) {
-      await indexAgentJob(saved.cursorAgentId, saved.id);
-    }
     if (saved.slackChannelId && saved.slackThreadTs) {
       await rememberSlackThread({
         channelId: saved.slackChannelId,
@@ -243,9 +260,6 @@ export async function upsertJob(job: Job): Promise<Job> {
 
   if (jobsBackendIsRedis()) {
     const saved = await writeJobRecord(next);
-    if (saved.cursorAgentId) {
-      await indexAgentJob(saved.cursorAgentId, saved.id);
-    }
     if (saved.slackChannelId && saved.slackThreadTs) {
       await rememberSlackThread({
         channelId: saved.slackChannelId,
@@ -316,7 +330,7 @@ export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
   const now = Date.now();
 
   if (jobsBackendIsRedis()) {
-    const jobs = await listRecentJobRecords(MAX_RECENT_JOBS);
+    const jobs = await listRecentJobRecords(ACTIVE_JOB_SCAN_LIMIT);
     let reclaimed = 0;
     for (const job of jobs) {
       if (job.status !== "delivering") continue;
@@ -360,13 +374,13 @@ export async function getJob(jobId: string): Promise<Job | undefined> {
   return data.jobs.find((job) => job.id === jobId);
 }
 
-export async function listJobs(): Promise<Job[]> {
+export async function listJobs(limit = DASHBOARD_JOB_LIMIT): Promise<Job[]> {
   await ensureJobMigration();
   if (jobsBackendIsRedis()) {
-    return listRecentJobRecords(MAX_RECENT_JOBS);
+    return listRecentJobRecords(limit);
   }
   const data = await getStore();
-  return data.jobs;
+  return data.jobs.slice(0, limit);
 }
 
 /** Resolve a job for a Cursor agent via the agent index (Redis) or scan. */
@@ -382,7 +396,7 @@ export async function findDispatchedJobForAgentId(
       if (job?.status === "dispatched") return job;
     }
   }
-  const jobs = await listJobs();
+  const jobs = await listJobs(ACTIVE_JOB_SCAN_LIMIT);
   return findDispatchedJobForAgent(jobs, agentId);
 }
 
@@ -461,7 +475,7 @@ export async function listChats(): Promise<TelegramChat[]> {
 
 export async function rememberSlackThreadsFromJobs() {
   const now = new Date().toISOString();
-  const jobs = await listJobs();
+  const jobs = await listJobs(ACTIVE_JOB_SCAN_LIMIT);
   await updateStore((data) => {
     for (const job of [...jobs].reverse()) {
       if (!job.slackChannelId || !job.slackThreadTs) continue;

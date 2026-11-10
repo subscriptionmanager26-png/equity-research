@@ -35,7 +35,8 @@ async function loop() {
   while (true) {
     try {
       await reclaimStaleDeliveringJobs();
-      const jobs = await listJobs();
+      const { ACTIVE_JOB_SCAN_LIMIT } = await import("@/lib/job-store");
+      const jobs = await listJobs(ACTIVE_JOB_SCAN_LIMIT);
       for (const job of jobs) {
         if (job.status !== "dispatched") continue;
         const agentId = job.cursorAgentId ?? extractAgentId(job.cursorBody);

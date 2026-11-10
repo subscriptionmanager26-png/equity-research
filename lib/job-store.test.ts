@@ -4,9 +4,11 @@ import { describe, it } from "node:test";
 import {
   agentKey,
   capJobEvents,
+  DASHBOARD_JOB_LIMIT,
   isTerminalJobStatus,
   jobKey,
   MAX_JOB_EVENTS,
+  MAX_RECENT_JOBS,
 } from "./job-store";
 import type { Job } from "./types";
 
@@ -45,5 +47,10 @@ describe("job-store caps", () => {
     const capped = capJobEvents(job);
     assert.equal(capped.events.length, MAX_JOB_EVENTS);
     assert.equal(capped.events[0]?.type, "e0");
+  });
+
+  it("keeps dashboard list much smaller than the recent ZSET cap", () => {
+    assert.ok(DASHBOARD_JOB_LIMIT < MAX_RECENT_JOBS);
+    assert.ok(DASHBOARD_JOB_LIMIT <= 40);
   });
 });

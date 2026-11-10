@@ -55,6 +55,7 @@ type StatusPayload = {
     lastMessageAt: string;
   }[];
   jobCount: number;
+  storeError?: string;
 };
 
 
@@ -123,27 +124,63 @@ export function Dashboard() {
     try {
       const [statusRes, jobsRes] = await Promise.all([
         fetch("/api/status"),
-        fetch("/api/jobs"),
+        fetch("/api/jobs?limit=40"),
       ]);
       if (!statusRes.ok || !jobsRes.ok) {
         throw new Error("Could not load Relay status");
       }
-      setStatus((await statusRes.json()) as StatusPayload);
-      const payload = (await jobsRes.json()) as { jobs: Job[] };
-      setJobs(payload.jobs);
+      const statusPayload = (await statusRes.json()) as StatusPayload;
+      const jobsPayload = (await jobsRes.json()) as {
+        jobs: Job[];
+        storeError?: string;
+      };
+      setStatus(statusPayload);
+      setJobs(jobsPayload.jobs);
+      if (statusPayload.storeError || jobsPayload.storeError) {
+        setLoadError("Redis unavailable (quota or outage)");
+        return false;
+      }
       setLoadError(null);
       setReady(true);
+      return true;
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Load failed");
+      return false;
     }
   }, []);
 
   useEffect(() => {
-    const immediate = window.setTimeout(() => void refresh(), 0);
-    const timer = window.setInterval(() => void refresh(), 2500);
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const tick = async (delayMs: number) => {
+      timer = window.setTimeout(async () => {
+        if (cancelled) return;
+        let ok = true;
+        if (document.visibilityState === "visible") {
+          ok = await refresh();
+        }
+        if (!cancelled) {
+          // Healthy: 15s. Redis errors: 60s so we stop burning Upstash commands.
+          void tick(ok ? 15_000 : 60_000);
+        }
+      }, delayMs);
+    };
+
+    void (async () => {
+      const ok = await refresh();
+      if (!cancelled) void tick(ok ? 15_000 : 60_000);
+    })();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
-      window.clearTimeout(immediate);
-      window.clearInterval(timer);
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refresh]);
 
