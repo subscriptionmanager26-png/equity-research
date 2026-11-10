@@ -169,29 +169,37 @@ export async function pruneMissingRecentJobs(sample = 25): Promise<number> {
 }
 
 export async function getJobIdForAgent(agentId: string): Promise<string | undefined> {
-  const redis = await getRedis();
-  const jobId = await redis.get<string>(agentKey(agentId));
-  return jobId ?? undefined;
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    const jobId = await redis.get<string>(agentKey(agentId));
+    return jobId ?? undefined;
+  });
 }
 
 export async function indexAgentJob(agentId: string, jobId: string) {
-  const redis = await getRedis();
-  await redis.set(agentKey(agentId), jobId);
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    await redis.set(agentKey(agentId), jobId);
+  });
 }
 
 /** Claim settle exclusively for ~2 minutes so webhook + poll cannot double-deliver. */
 export async function claimSettleSlot(jobId: string, ttlSeconds = 120): Promise<boolean> {
-  const redis = await getRedis();
-  const ok = await redis.set(`${SETTLE_CLAIM_PREFIX}${jobId}`, "1", {
-    nx: true,
-    ex: ttlSeconds,
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    const ok = await redis.set(`${SETTLE_CLAIM_PREFIX}${jobId}`, "1", {
+      nx: true,
+      ex: ttlSeconds,
+    });
+    return ok === "OK";
   });
-  return ok === "OK";
 }
 
 export async function releaseSettleSlot(jobId: string) {
-  const redis = await getRedis();
-  await redis.del(`${SETTLE_CLAIM_PREFIX}${jobId}`);
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    await redis.del(`${SETTLE_CLAIM_PREFIX}${jobId}`);
+  });
 }
 
 /**

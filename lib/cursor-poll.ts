@@ -1,5 +1,8 @@
 import { listJobs, reclaimStaleDeliveringJobs } from "@/lib/jobs";
-import { ACTIVE_JOB_SCAN_LIMIT, pruneMissingRecentJobs } from "@/lib/job-store";
+import {
+  ACTIVE_JOB_SCAN_LIMIT,
+  pruneMissingRecentJobs,
+} from "@/lib/job-store";
 import { extractAgentId } from "@/lib/cursor-api";
 import {
   settleAgentJob,
@@ -46,7 +49,7 @@ export type SettleOneResult =
   | { status: "waiting" }
   | { status: "skipped"; reason: string };
 
-/** Check one dispatched job — used by the post-message 30s settle chain. */
+/** Check one dispatched job — used by the post-message settle chain. */
 export async function settleDispatchedJob(job: Job): Promise<SettleOneResult> {
   if (job.pendingArtifacts && job.status === "replied") {
     await runArtifactFollowUp({
@@ -56,6 +59,15 @@ export async function settleDispatchedJob(job: Job): Promise<SettleOneResult> {
       job,
     });
     return { status: "settled", artifactFollowUp: true };
+  }
+  // Stale "delivering" after a killed webhook settle — treat like dispatched once reclaimed.
+  if (job.status === "delivering") {
+    await reclaimStaleDeliveringJobs(60_000).catch(() => undefined);
+    const refreshed = (await listJobs(ACTIVE_JOB_SCAN_LIMIT)).find((j) => j.id === job.id);
+    if (!refreshed || refreshed.status !== "dispatched") {
+      return { status: "skipped", reason: refreshed?.status ?? "delivering" };
+    }
+    job = refreshed;
   }
   if (job.status !== "dispatched") {
     return { status: "skipped", reason: job.status };

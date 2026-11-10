@@ -310,20 +310,57 @@ async function readStoreFromBlob(): Promise<StoreData> {
   throw lastError;
 }
 
+function jobUpdatedAtMs(job: { updatedAt?: string; createdAt?: string }) {
+  return Date.parse(job.updatedAt || job.createdAt || "") || 0;
+}
+
+/**
+ * Merge jobs by id keeping the newest updatedAt so concurrent Blob RMW
+ * (Slack dedupe vs settle) cannot clobber a replied job back to delivering.
+ */
+function mergeStoreJobs(base: StoreData, incoming: StoreData): StoreData {
+  const byId = new Map<string, StoreData["jobs"][number]>();
+  for (const job of base.jobs ?? []) {
+    if (job?.id) byId.set(job.id, job);
+  }
+  for (const job of incoming.jobs ?? []) {
+    if (!job?.id) continue;
+    const prev = byId.get(job.id);
+    if (!prev || jobUpdatedAtMs(job) >= jobUpdatedAtMs(prev)) {
+      byId.set(job.id, job);
+    }
+  }
+  const jobs = [...byId.values()].sort(
+    (a, b) => jobUpdatedAtMs(b) - jobUpdatedAtMs(a),
+  );
+  return {
+    ...incoming,
+    jobs,
+    // Prefer newer thread map entries without dropping siblings.
+    slackThreads: {
+      ...(base.slackThreads ?? {}),
+      ...(incoming.slackThreads ?? {}),
+    },
+  };
+}
+
 async function writeStoreToBlob(data: StoreData): Promise<void> {
   if (blobReadFailed) {
     console.error("[relay] Skipping blob write after a failed read");
     return;
   }
+  // Re-read just before write to reduce lost updates across Vercel isolates.
+  const latest = await readStoreFromBlob().catch(() => lastGoodStore ?? emptyStore());
+  const merged = mergeStoreJobs(latest, data);
   const { put } = await import("@vercel/blob");
-  await put(BLOB_PATH, JSON.stringify(data), {
+  await put(BLOB_PATH, JSON.stringify(merged), {
     access: "private",
     allowOverwrite: true,
     addRandomSuffix: false,
     contentType: "application/json",
     cacheControlMaxAge: 0,
   });
-  lastGoodStore = data;
+  lastGoodStore = merged;
 }
 
 async function readStoreFromKv(): Promise<StoreData> {

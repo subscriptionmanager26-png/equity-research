@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { settleDispatchedJob } from "@/lib/cursor-poll";
-import { getJob } from "@/lib/jobs";
+import { getJob, reclaimStaleDeliveringJobs } from "@/lib/jobs";
 import {
   enqueueJobSettle,
   SETTLE_POLL_MAX_ATTEMPTS,
@@ -40,6 +40,9 @@ export async function POST(request: Request) {
   if (!Number.isFinite(attempt) || attempt < 1) {
     return NextResponse.json({ error: "invalid attempt" }, { status: 400 });
   }
+
+  // Webhook settle can die after claiming "delivering"; reclaim before retrying.
+  await reclaimStaleDeliveringJobs(90_000).catch(() => undefined);
 
   const job = await getJob(jobId);
   if (!job) {
