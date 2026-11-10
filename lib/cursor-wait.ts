@@ -13,8 +13,9 @@ declare global {
   var __relayCursorWaiter: { started: boolean; loopActive?: boolean } | undefined;
 }
 
-const POLL_MS = 4000;
-const TIMEOUT_MS = 12 * 60 * 1000;
+/** Local fallback only — match production settle cadence (30s / ~5m window). */
+const POLL_MS = 30_000;
+const TIMEOUT_MS = 5 * 60 * 1000;
 const inFlight = new Set<string>();
 
 export function startCursorWaiter() {

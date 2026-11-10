@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Bot,
@@ -56,7 +56,18 @@ type StatusPayload = {
   }[];
   jobCount: number;
   storeError?: string;
+  storeBackend?: string;
+  redisFailover?: boolean;
 };
+
+function hasInFlightJobs(list: Job[]) {
+  return list.some(
+    (job) =>
+      job.status === "queued" ||
+      job.status === "dispatched" ||
+      job.status === "delivering",
+  );
+}
 
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
@@ -119,6 +130,7 @@ export function Dashboard() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const jobsRef = useRef<Job[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -136,8 +148,13 @@ export function Dashboard() {
       };
       setStatus(statusPayload);
       setJobs(jobsPayload.jobs);
+      jobsRef.current = jobsPayload.jobs;
       if (statusPayload.storeError || jobsPayload.storeError) {
-        setLoadError("Redis unavailable (quota or outage)");
+        setLoadError(
+          statusPayload.redisFailover
+            ? "Redis quota/outage — using Blob contingency"
+            : "Redis unavailable (quota or outage)",
+        );
         return false;
       }
       setLoadError(null);
@@ -153,6 +170,12 @@ export function Dashboard() {
     let cancelled = false;
     let timer: number | undefined;
 
+    const nextDelay = (ok: boolean) => {
+      if (!ok) return 60_000;
+      // Listen for messages; only poll every 30s while a job is in flight.
+      return hasInFlightJobs(jobsRef.current) ? 30_000 : 5 * 60_000;
+    };
+
     const tick = async (delayMs: number) => {
       timer = window.setTimeout(async () => {
         if (cancelled) return;
@@ -160,16 +183,13 @@ export function Dashboard() {
         if (document.visibilityState === "visible") {
           ok = await refresh();
         }
-        if (!cancelled) {
-          // Healthy: 15s. Redis errors: 60s so we stop burning Upstash commands.
-          void tick(ok ? 15_000 : 60_000);
-        }
+        if (!cancelled) void tick(nextDelay(ok));
       }, delayMs);
     };
 
     void (async () => {
       const ok = await refresh();
-      if (!cancelled) void tick(ok ? 15_000 : 60_000);
+      if (!cancelled) void tick(nextDelay(ok));
     })();
 
     const onVisible = () => {

@@ -17,7 +17,11 @@ import {
   listChats,
   upsertJob,
 } from "@/lib/jobs";
-import { enqueueJobDispatch, qstashConfigured } from "@/lib/qstash";
+import {
+  enqueueJobDispatch,
+  enqueueJobSettle,
+  qstashConfigured,
+} from "@/lib/qstash";
 import { ackSlackDone, sendSlackFile, sendSlackMessage, slackUploadErrorDetail } from "@/lib/slack";
 import { getSlackInstall } from "@/lib/slack-install";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
@@ -160,15 +164,22 @@ export async function completeJobDispatch(job: Job): Promise<Job> {
     };
     // Upsert (not addJobEvent-only) so a concurrent Redis overwrite that
     // dropped the queued row cannot orphan the Cursor agent.
+    let saved: Job = dispatched;
     try {
-      return await upsertJob(dispatched);
+      saved = await upsertJob(dispatched);
     } catch (error) {
       console.error(
         `[relay] Failed to persist dispatched job ${job.id} (agent ${agentId ?? "unknown"})`,
         error,
       );
-      return dispatched;
     }
+    // Status webhook is primary; QStash settle chain backs it up every 30s for ~5m.
+    if (qstashConfigured() && saved.status === "dispatched") {
+      await enqueueJobSettle(saved.id, 1).catch((error) => {
+        console.error(`[relay] Failed to enqueue settle for ${saved.id}`, error);
+      });
+    }
+    return saved;
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Dispatch failed";
     try {

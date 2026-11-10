@@ -1,3 +1,4 @@
+import { isRedisFailoverActive } from "@/lib/redis-failover";
 import { storeBackend } from "@/lib/store";
 
 function trim(value: string | undefined): string {
@@ -113,6 +114,7 @@ export function publicStatus() {
     cursorStatusConfigured: cfg.cursorStatusConfigured,
     vercel: cfg.vercel,
     storeBackend: cfg.storeBackend,
+    redisFailover: isRedisFailoverActive(),
     qstashConfigured: cfg.qstashConfigured,
     slackEventsPrimary: cfg.slackEventsPrimary,
   };

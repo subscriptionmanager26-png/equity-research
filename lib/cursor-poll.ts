@@ -41,7 +41,42 @@ export async function retryStaleQueuedJobs(opts?: { max?: number }) {
   return retried;
 }
 
-/** Settle any dispatched jobs whose Cursor agent has finished (cron / manual backup). */
+export type SettleOneResult =
+  | { status: "settled"; artifactFollowUp: boolean }
+  | { status: "waiting" }
+  | { status: "skipped"; reason: string };
+
+/** Check one dispatched job — used by the post-message 30s settle chain. */
+export async function settleDispatchedJob(job: Job): Promise<SettleOneResult> {
+  if (job.pendingArtifacts && job.status === "replied") {
+    await runArtifactFollowUp({
+      jobId: job.id,
+      agentId: job.pendingArtifacts.agentId,
+      assistantText: job.reply?.message ?? "",
+      job,
+    });
+    return { status: "settled", artifactFollowUp: true };
+  }
+  if (job.status !== "dispatched") {
+    return { status: "skipped", reason: job.status };
+  }
+  const agentId = job.cursorAgentId ?? extractAgentId(job.cursorBody);
+  if (!agentId) return { status: "skipped", reason: "no_agent" };
+  if (isSettling(job.id)) return { status: "waiting" };
+
+  const agent = await getAgent(agentId);
+  if (!agentIsDone(agent.status)) return { status: "waiting" };
+
+  const result = await settleAgentJob(job.id, agentId, { trigger: "poll" });
+  if (!result.ok) return { status: "waiting" };
+  if (result.followUp) {
+    await runArtifactFollowUp(result.followUp);
+    return { status: "settled", artifactFollowUp: true };
+  }
+  return { status: "settled", artifactFollowUp: false };
+}
+
+/** Settle any dispatched jobs whose Cursor agent has finished (manual catch-up). */
 export async function pollDispatchedJobs(opts?: { maxMs?: number }) {
   const deadline = opts?.maxMs ? Date.now() + opts.maxMs : Number.POSITIVE_INFINITY;
   const pruned = await pruneMissingRecentJobs(25).catch(() => 0);
@@ -53,30 +88,11 @@ export async function pollDispatchedJobs(opts?: { maxMs?: number }) {
 
   for (const job of jobs) {
     if (Date.now() > deadline) break;
-    if (job.pendingArtifacts && job.status === "replied") {
-      await runArtifactFollowUp({
-        jobId: job.id,
-        agentId: job.pendingArtifacts.agentId,
-        assistantText: job.reply?.message ?? "",
-        job,
-      }).catch((error) => {
-        console.error(`[relay] artifact follow-up poll failed for ${job.id}`, error);
-      });
-      artifactFollowUps += 1;
-      continue;
-    }
-
-    if (job.status !== "dispatched") continue;
-    const agentId = job.cursorAgentId ?? extractAgentId(job.cursorBody);
-    if (!agentId || isSettling(job.id)) continue;
     try {
-      const agent = await getAgent(agentId);
-      if (!agentIsDone(agent.status)) continue;
-      const result = await settleAgentJob(job.id, agentId, { trigger: "poll" });
-      if (result.ok) settled += 1;
-      if (result.followUp) {
-        await runArtifactFollowUp(result.followUp);
-        artifactFollowUps += 1;
+      const result = await settleDispatchedJob(job);
+      if (result.status === "settled") {
+        settled += 1;
+        if (result.artifactFollowUp) artifactFollowUps += 1;
       }
     } catch (error) {
       console.error(`[relay] pollDispatchedJobs failed for ${job.id}`, error);

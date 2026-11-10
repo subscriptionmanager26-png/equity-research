@@ -1,5 +1,10 @@
 import { getConfig } from "@/lib/config";
 
+/** Backup settle cadence after dispatch (status webhook is primary). */
+export const SETTLE_POLL_INTERVAL_SECONDS = 30;
+/** 10 × 30s ≈ 5 minutes of post-message settle checks. */
+export const SETTLE_POLL_MAX_ATTEMPTS = 10;
+
 export function qstashToken() {
   return process.env.QSTASH_TOKEN?.trim() || "";
 }
@@ -14,6 +19,14 @@ export function qstashDispatchUrl() {
     throw new Error("PUBLIC_URL is required to enqueue job dispatch");
   }
   return `${publicUrl}/api/jobs/dispatch`;
+}
+
+export function qstashSettleUrl() {
+  const { publicUrl } = getConfig();
+  if (!publicUrl) {
+    throw new Error("PUBLIC_URL is required to enqueue job settle");
+  }
+  return `${publicUrl}/api/jobs/settle`;
 }
 
 function cronHeaders(): Record<string, string> {
@@ -44,6 +57,36 @@ export async function enqueueJobDispatch(
     body.delay = options.delaySeconds;
   }
   return client.publishJSON(body);
+}
+
+/**
+ * Schedule a single-job settle check. Call after dispatch with attempt=1;
+ * the settle route re-enqueues until the agent answers or max attempts.
+ */
+export async function enqueueJobSettle(
+  jobId: string,
+  attempt: number,
+  options?: { delaySeconds?: number },
+) {
+  const token = qstashToken();
+  if (!token) {
+    throw new Error("QSTASH_TOKEN is not configured");
+  }
+  if (attempt < 1 || attempt > SETTLE_POLL_MAX_ATTEMPTS) {
+    throw new Error(`settle attempt out of range: ${attempt}`);
+  }
+  const { Client } = await import("@upstash/qstash");
+  const client = new Client({ token });
+  const delay =
+    options?.delaySeconds ?? SETTLE_POLL_INTERVAL_SECONDS;
+  return client.publishJSON({
+    url: qstashSettleUrl(),
+    body: { jobId, attempt },
+    headers: cronHeaders(),
+    retries: 2,
+    deduplicationId: `settle-${jobId}-${attempt}`,
+    delay,
+  });
 }
 
 export async function verifyQStashRequest(request: Request, rawBody: string) {

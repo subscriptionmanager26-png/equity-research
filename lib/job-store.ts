@@ -1,6 +1,16 @@
+import { noteRedisError } from "@/lib/redis-failover";
 import { getRedis, kvEnabled } from "@/lib/store";
 import type { Job, JobStatus } from "@/lib/types";
 import { normalizeCursorAgentId } from "@/lib/cursor-api";
+
+async function withRedisOrFail<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    noteRedisError(error);
+    throw error;
+  }
+}
 
 export const JOB_KEY_PREFIX = "relay:job:";
 export const AGENT_KEY_PREFIX = "relay:agent:";
@@ -69,44 +79,50 @@ export function markJobsMigratedCached() {
 }
 
 export async function readJobRecord(jobId: string): Promise<Job | undefined> {
-  const redis = await getRedis();
-  const job = await redis.get<Job>(jobKey(jobId));
-  return job ?? undefined;
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    const job = await redis.get<Job>(jobKey(jobId));
+    return job ?? undefined;
+  });
 }
 
 export async function writeJobRecord(job: Job): Promise<Job> {
-  const redis = await getRedis();
-  const now = Date.now();
-  const next = capJobEvents({
-    ...job,
-    updatedAt: new Date(now).toISOString(),
-  });
-  const terminal = isTerminalJobStatus(next.status);
-  const pipe = redis.pipeline();
-  if (terminal) {
-    pipe.set(jobKey(next.id), next, { ex: JOB_TTL_SECONDS });
-  } else {
-    pipe.set(jobKey(next.id), next);
-  }
-  pipe.zadd(RECENT_JOBS_KEY, { score: now, member: next.id });
-  // Keep only the newest MAX_RECENT_JOBS members (1 command; no per-key fan-out).
-  pipe.zremrangebyrank(RECENT_JOBS_KEY, 0, -(MAX_RECENT_JOBS + 1));
-  if (next.cursorAgentId) {
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    const now = Date.now();
+    const next = capJobEvents({
+      ...job,
+      updatedAt: new Date(now).toISOString(),
+    });
+    const terminal = isTerminalJobStatus(next.status);
+    const pipe = redis.pipeline();
     if (terminal) {
-      pipe.set(agentKey(next.cursorAgentId), next.id, { ex: JOB_TTL_SECONDS });
+      pipe.set(jobKey(next.id), next, { ex: JOB_TTL_SECONDS });
     } else {
-      pipe.set(agentKey(next.cursorAgentId), next.id);
+      pipe.set(jobKey(next.id), next);
     }
-  }
-  await pipe.exec();
-  return next;
+    pipe.zadd(RECENT_JOBS_KEY, { score: now, member: next.id });
+    // Keep only the newest MAX_RECENT_JOBS members (1 command; no per-key fan-out).
+    pipe.zremrangebyrank(RECENT_JOBS_KEY, 0, -(MAX_RECENT_JOBS + 1));
+    if (next.cursorAgentId) {
+      if (terminal) {
+        pipe.set(agentKey(next.cursorAgentId), next.id, { ex: JOB_TTL_SECONDS });
+      } else {
+        pipe.set(agentKey(next.cursorAgentId), next.id);
+      }
+    }
+    await pipe.exec();
+    return next;
+  });
 }
 
 /** Cheap job count for /api/status — one ZCARD, no GETs. */
 export async function countRecentJobs(): Promise<number> {
   if (!kvEnabled()) return 0;
-  const redis = await getRedis();
-  return redis.zcard(RECENT_JOBS_KEY);
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    return redis.zcard(RECENT_JOBS_KEY);
+  });
 }
 
 /**
@@ -115,17 +131,19 @@ export async function countRecentJobs(): Promise<number> {
 export async function listRecentJobRecords(
   limit = DASHBOARD_JOB_LIMIT,
 ): Promise<Job[]> {
-  const redis = await getRedis();
-  const take = Math.max(1, Math.min(limit, MAX_RECENT_JOBS));
-  const ids = await redis.zrange(RECENT_JOBS_KEY, 0, take - 1, { rev: true });
-  if (!ids.length) return [];
-  const keys = ids.map((id) => jobKey(String(id)));
-  const rows = await redis.mget<(Job | null)[]>(...keys);
-  const jobs: Job[] = [];
-  for (const row of rows ?? []) {
-    if (row && typeof row === "object" && "id" in row) jobs.push(row as Job);
-  }
-  return jobs;
+  return withRedisOrFail(async () => {
+    const redis = await getRedis();
+    const take = Math.max(1, Math.min(limit, MAX_RECENT_JOBS));
+    const ids = await redis.zrange(RECENT_JOBS_KEY, 0, take - 1, { rev: true });
+    if (!ids.length) return [];
+    const keys = ids.map((id) => jobKey(String(id)));
+    const rows = await redis.mget<(Job | null)[]>(...keys);
+    const jobs: Job[] = [];
+    for (const row of rows ?? []) {
+      if (row && typeof row === "object" && "id" in row) jobs.push(row as Job);
+    }
+    return jobs;
+  });
 }
 
 /** Light prune used by cron only — samples oldest ids, not the full ZSET. */

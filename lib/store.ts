@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { isRedisFailoverActive, noteRedisError } from "@/lib/redis-failover";
 import type { StoreData } from "@/lib/types";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
@@ -57,6 +58,12 @@ function redisCredentials() {
 }
 
 export function kvEnabled() {
+  // Quota / outage: treat Redis as off so callers fall through to Blob.
+  if (isRedisFailoverActive()) return false;
+  return Boolean(redisCredentials());
+}
+
+export function redisConfigured() {
   return Boolean(redisCredentials());
 }
 
@@ -162,8 +169,12 @@ const TELEGRAM_MSG_PREFIX = "relay:telegram-msg:";
 
 export async function isSlackInboundMessageProcessed(messageKey: string): Promise<boolean> {
   if (kvEnabled()) {
-    const redis = await getRedis();
-    return Boolean(await redis.get(`${SLACK_MSG_PREFIX}${messageKey}`));
+    try {
+      const redis = await getRedis();
+      return Boolean(await redis.get(`${SLACK_MSG_PREFIX}${messageKey}`));
+    } catch (error) {
+      if (!noteRedisError(error)) throw error;
+    }
   }
   const data = await getStore();
   return Boolean(data.processedSlackMessages?.includes(messageKey));
@@ -173,12 +184,16 @@ export async function isSlackInboundMessageProcessed(messageKey: string): Promis
 export async function claimSlackInboundMessage(messageKey: string): Promise<boolean> {
   const ttlSeconds = 60 * 60 * 24 * 14;
   if (kvEnabled()) {
-    const redis = await getRedis();
-    const ok = await redis.set(`${SLACK_MSG_PREFIX}${messageKey}`, "1", {
-      nx: true,
-      ex: ttlSeconds,
-    });
-    return ok === "OK";
+    try {
+      const redis = await getRedis();
+      const ok = await redis.set(`${SLACK_MSG_PREFIX}${messageKey}`, "1", {
+        nx: true,
+        ex: ttlSeconds,
+      });
+      return ok === "OK";
+    } catch (error) {
+      if (!noteRedisError(error)) throw error;
+    }
   }
   return updateStore((data) => {
     data.processedSlackMessages = data.processedSlackMessages ?? [];
@@ -197,12 +212,16 @@ export async function claimTelegramInboundMessage(
   const messageKey = `${chatId}:${messageId}`;
   const ttlSeconds = 60 * 60 * 24 * 14;
   if (kvEnabled()) {
-    const redis = await getRedis();
-    const ok = await redis.set(`${TELEGRAM_MSG_PREFIX}${messageKey}`, "1", {
-      nx: true,
-      ex: ttlSeconds,
-    });
-    return ok === "OK";
+    try {
+      const redis = await getRedis();
+      const ok = await redis.set(`${TELEGRAM_MSG_PREFIX}${messageKey}`, "1", {
+        nx: true,
+        ex: ttlSeconds,
+      });
+      return ok === "OK";
+    } catch (error) {
+      if (!noteRedisError(error)) throw error;
+    }
   }
   return updateStore((data) => {
     data.processedSlackMessages = data.processedSlackMessages ?? [];
@@ -321,14 +340,36 @@ function activeBackend(): "upstash-redis" | "vercel-blob" | "local-file" {
 
 async function readStore(): Promise<StoreData> {
   const backend = activeBackend();
-  if (backend === "upstash-redis") return readStoreFromKv();
+  if (backend === "upstash-redis") {
+    try {
+      return await readStoreFromKv();
+    } catch (error) {
+      if (noteRedisError(error) && blobEnabled()) {
+        console.error("[relay] Redis read failed; falling back to Blob store");
+        return readStoreFromBlob();
+      }
+      throw error;
+    }
+  }
   if (backend === "vercel-blob") return readStoreFromBlob();
   return readStoreFromFile();
 }
 
 async function writeStore(data: StoreData): Promise<void> {
   const backend = activeBackend();
-  if (backend === "upstash-redis") return writeStoreToKv(data);
+  if (backend === "upstash-redis") {
+    try {
+      await writeStoreToKv(data);
+      return;
+    } catch (error) {
+      if (noteRedisError(error) && blobEnabled()) {
+        console.error("[relay] Redis write failed; falling back to Blob store");
+        await writeStoreToBlob(data);
+        return;
+      }
+      throw error;
+    }
+  }
   if (backend === "vercel-blob") return writeStoreToBlob(data);
   return writeStoreToFile(data);
 }
@@ -347,7 +388,15 @@ export function updateStore<T>(
 ): Promise<T> {
   return withLock(async () => {
     if (activeBackend() === "upstash-redis") {
-      return withRedisStoreLock(() => runStoreMutation(mutator));
+      try {
+        return await withRedisStoreLock(() => runStoreMutation(mutator));
+      } catch (error) {
+        if (noteRedisError(error) && blobEnabled()) {
+          console.error("[relay] Redis mutation failed; using Blob store");
+          return runStoreMutation(mutator);
+        }
+        throw error;
+      }
     }
     return runStoreMutation(mutator);
   });
@@ -356,7 +405,15 @@ export function updateStore<T>(
 export function getStore(): Promise<StoreData> {
   return withLock(async () => {
     if (activeBackend() === "upstash-redis") {
-      return withRedisStoreLock(() => readStore());
+      try {
+        return await withRedisStoreLock(() => readStore());
+      } catch (error) {
+        if (noteRedisError(error) && blobEnabled()) {
+          console.error("[relay] Redis getStore failed; using Blob store");
+          return readStore();
+        }
+        throw error;
+      }
     }
     return readStore();
   });

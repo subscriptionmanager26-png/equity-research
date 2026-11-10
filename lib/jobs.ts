@@ -15,6 +15,7 @@ import {
   releaseSettleSlot,
   writeJobRecord,
 } from "@/lib/job-store";
+import { noteRedisError } from "@/lib/redis-failover";
 import { claimSlackInboundMessage, getStore, kvEnabled, updateStore } from "@/lib/store";
 import type {
   InboundMessage,
@@ -24,6 +25,17 @@ import type {
   SlackThreadRef,
   TelegramChat,
 } from "@/lib/types";
+
+/** Run Redis job-store work; on quota/outage mark failover and return null so caller uses Blob. */
+async function tryRedisJobs<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (!noteRedisError(error)) throw error;
+    console.error("[relay] Redis job store failed; using Blob contingency");
+    return null;
+  }
+}
 
 const MAX_JOBS_FILE = 100;
 const MAX_SLACK_EVENT_IDS = 500;
@@ -74,7 +86,8 @@ async function ensureJobMigration() {
 export async function getJobCount(): Promise<number> {
   await ensureJobMigration();
   if (jobsBackendIsRedis()) {
-    return countRecentJobs();
+    const count = await tryRedisJobs(() => countRecentJobs());
+    if (count !== null) return count;
   }
   const data = await getStore();
   return data.jobs.length;
@@ -160,26 +173,29 @@ export async function createJob(input: {
   const now = job.createdAt;
 
   if (jobsBackendIsRedis()) {
-    await writeJobRecord(job);
-    await updateStore((data) => {
-      if (input.chatId) {
-        upsertChat(data.chats, {
-          chatId: input.chatId,
-          username: input.username,
-          displayName: input.displayName,
-          at: now,
-        });
-      }
-      if (input.slackChannelId && input.slackThreadTs) {
-        rememberSlackThreadInStore(data, {
-          channelId: input.slackChannelId,
-          threadTs: input.slackThreadTs,
-          lastJobId: job.id,
-          updatedAt: now,
-        });
-      }
+    const saved = await tryRedisJobs(async () => {
+      await writeJobRecord(job);
+      await updateStore((data) => {
+        if (input.chatId) {
+          upsertChat(data.chats, {
+            chatId: input.chatId,
+            username: input.username,
+            displayName: input.displayName,
+            at: now,
+          });
+        }
+        if (input.slackChannelId && input.slackThreadTs) {
+          rememberSlackThreadInStore(data, {
+            channelId: input.slackChannelId,
+            threadTs: input.slackThreadTs,
+            lastJobId: job.id,
+            updatedAt: now,
+          });
+        }
+      });
+      return job;
     });
-    return job;
+    if (saved) return saved;
   }
 
   return updateStore((data) => {
@@ -213,25 +229,28 @@ export async function addJobEvent(
   await ensureJobMigration();
 
   if (jobsBackendIsRedis()) {
-    const job = await readJobRecord(jobId);
-    if (!job) return undefined;
-    job.updatedAt = new Date().toISOString();
-    pushJobEvent(job, event, job.updatedAt);
-    if (patch) {
-      Object.assign(job, patch, { updatedAt: job.updatedAt });
-      if ("pendingArtifacts" in patch && patch.pendingArtifacts === undefined) {
-        delete job.pendingArtifacts;
+    const saved = await tryRedisJobs(async () => {
+      const job = await readJobRecord(jobId);
+      if (!job) return undefined;
+      job.updatedAt = new Date().toISOString();
+      pushJobEvent(job, event, job.updatedAt);
+      if (patch) {
+        Object.assign(job, patch, { updatedAt: job.updatedAt });
+        if ("pendingArtifacts" in patch && patch.pendingArtifacts === undefined) {
+          delete job.pendingArtifacts;
+        }
       }
-    }
-    const saved = await writeJobRecord(capJobEvents(job));
-    if (saved.slackChannelId && saved.slackThreadTs) {
-      await rememberSlackThread({
-        channelId: saved.slackChannelId,
-        threadTs: saved.slackThreadTs,
-        lastJobId: saved.id,
-      });
-    }
-    return saved;
+      const next = await writeJobRecord(capJobEvents(job));
+      if (next.slackChannelId && next.slackThreadTs) {
+        await rememberSlackThread({
+          channelId: next.slackChannelId,
+          threadTs: next.slackThreadTs,
+          lastJobId: next.id,
+        });
+      }
+      return next;
+    });
+    if (saved !== null) return saved ?? undefined;
   }
 
   return updateStore((data) => {
@@ -259,15 +278,18 @@ export async function upsertJob(job: Job): Promise<Job> {
   const next: Job = { ...job, updatedAt: now };
 
   if (jobsBackendIsRedis()) {
-    const saved = await writeJobRecord(next);
-    if (saved.slackChannelId && saved.slackThreadTs) {
-      await rememberSlackThread({
-        channelId: saved.slackChannelId,
-        threadTs: saved.slackThreadTs,
-        lastJobId: saved.id,
-      });
-    }
-    return saved;
+    const saved = await tryRedisJobs(async () => {
+      const written = await writeJobRecord(next);
+      if (written.slackChannelId && written.slackThreadTs) {
+        await rememberSlackThread({
+          channelId: written.slackChannelId,
+          threadTs: written.slackThreadTs,
+          lastJobId: written.id,
+        });
+      }
+      return written;
+    });
+    if (saved) return saved;
   }
 
   return updateStore((data) => {
@@ -297,19 +319,22 @@ export async function claimJobForSettle(jobId: string): Promise<Job | undefined>
   await ensureJobMigration();
 
   if (jobsBackendIsRedis()) {
-    if (!(await claimSettleSlot(jobId))) return undefined;
-    const job = await readJobRecord(jobId);
-    if (!job || job.status !== "dispatched") {
-      await releaseSettleSlot(jobId);
-      return undefined;
-    }
-    job.status = "delivering";
-    job.updatedAt = new Date().toISOString();
-    pushJobEvent(job, {
-      type: "delivering",
-      detail: "Collecting Cursor answer and artifacts",
-    }, job.updatedAt);
-    return writeJobRecord(job);
+    const claimed = await tryRedisJobs(async () => {
+      if (!(await claimSettleSlot(jobId))) return undefined;
+      const job = await readJobRecord(jobId);
+      if (!job || job.status !== "dispatched") {
+        await releaseSettleSlot(jobId);
+        return undefined;
+      }
+      job.status = "delivering";
+      job.updatedAt = new Date().toISOString();
+      pushJobEvent(job, {
+        type: "delivering",
+        detail: "Collecting Cursor answer and artifacts",
+      }, job.updatedAt);
+      return writeJobRecord(job);
+    });
+    if (claimed !== null) return claimed ?? undefined;
   }
 
   return updateStore((data) => {
@@ -330,22 +355,25 @@ export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
   const now = Date.now();
 
   if (jobsBackendIsRedis()) {
-    const jobs = await listRecentJobRecords(ACTIVE_JOB_SCAN_LIMIT);
-    let reclaimed = 0;
-    for (const job of jobs) {
-      if (job.status !== "delivering") continue;
-      if (now - Date.parse(job.updatedAt) < maxAgeMs) continue;
-      job.status = "dispatched";
-      job.updatedAt = new Date().toISOString();
-      pushJobEvent(job, {
-        type: "reclaimed",
-        detail: "Delivery worker timed out; polling will retry",
-      }, job.updatedAt);
-      await writeJobRecord(job);
-      await releaseSettleSlot(job.id);
-      reclaimed += 1;
-    }
-    return reclaimed;
+    const reclaimed = await tryRedisJobs(async () => {
+      const jobs = await listRecentJobRecords(ACTIVE_JOB_SCAN_LIMIT);
+      let count = 0;
+      for (const job of jobs) {
+        if (job.status !== "delivering") continue;
+        if (now - Date.parse(job.updatedAt) < maxAgeMs) continue;
+        job.status = "dispatched";
+        job.updatedAt = new Date().toISOString();
+        pushJobEvent(job, {
+          type: "reclaimed",
+          detail: "Delivery worker timed out; polling will retry",
+        }, job.updatedAt);
+        await writeJobRecord(job);
+        await releaseSettleSlot(job.id);
+        count += 1;
+      }
+      return count;
+    });
+    if (reclaimed !== null) return reclaimed;
   }
 
   return updateStore((data) => {
@@ -368,7 +396,8 @@ export async function reclaimStaleDeliveringJobs(maxAgeMs = 120_000) {
 export async function getJob(jobId: string): Promise<Job | undefined> {
   await ensureJobMigration();
   if (jobsBackendIsRedis()) {
-    return readJobRecord(jobId);
+    const job = await tryRedisJobs(() => readJobRecord(jobId));
+    if (job !== null) return job ?? undefined;
   }
   const data = await getStore();
   return data.jobs.find((job) => job.id === jobId);
@@ -377,7 +406,8 @@ export async function getJob(jobId: string): Promise<Job | undefined> {
 export async function listJobs(limit = DASHBOARD_JOB_LIMIT): Promise<Job[]> {
   await ensureJobMigration();
   if (jobsBackendIsRedis()) {
-    return listRecentJobRecords(limit);
+    const jobs = await tryRedisJobs(() => listRecentJobRecords(limit));
+    if (jobs) return jobs;
   }
   const data = await getStore();
   return data.jobs.slice(0, limit);

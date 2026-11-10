@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { continueAfterResponse } from "@/lib/after-response";
-import { pollDispatchedJobs } from "@/lib/cursor-poll";
 import { timingSafeEqual } from "@/lib/relay";
 import { pollSlackOnce } from "@/lib/slack-user-poller";
 
@@ -22,16 +20,10 @@ async function handlePoll(request: Request) {
   const force = new URL(request.url).searchParams.get("force") === "1";
   const slack = await pollSlackOnce({ force });
 
-  continueAfterResponse(async () => {
-    await pollDispatchedJobs({ maxMs: 20_000 }).catch((error) => {
-      console.error("[relay] Cursor poll during Slack scan failed", error);
-    });
-  });
-
   return NextResponse.json({
     ...slack,
     note:
-      "Manual poll only. Production ingress is Slack Events API at /api/slack/events.",
+      "Manual poll only. Production ingress is Slack Events API at /api/slack/events. Cursor settle is webhook + per-job 30s QStash chain.",
   });
 }
 
