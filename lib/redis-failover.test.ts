@@ -7,6 +7,7 @@ import {
   isRedisUnavailableError,
   markRedisFailover,
   noteRedisError,
+  redisFailoverUntil,
 } from "./redis-failover";
 
 describe("redis failover", () => {
@@ -25,13 +26,15 @@ describe("redis failover", () => {
     );
   });
 
-  it("activates failover on quota errors", () => {
+  it("activates long failover on quota errors", () => {
     assert.equal(isRedisFailoverActive(), false);
     assert.equal(
       noteRedisError(new Error("ERR max requests limit exceeded")),
       true,
     );
     assert.equal(isRedisFailoverActive(), true);
+    // Quota failover is ~24h, not the short outage window.
+    assert.ok(redisFailoverUntil() - Date.now() > 12 * 60 * 60 * 1000);
   });
 
   it("ignores unrelated errors", () => {

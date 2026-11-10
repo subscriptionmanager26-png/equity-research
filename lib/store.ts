@@ -236,12 +236,16 @@ export async function claimTelegramInboundMessage(
 /** One-at-a-time slot so Vercel minute scans cannot fork into parallel loops. */
 export async function acquireSlackPollChainSlot(ttlSeconds = 52): Promise<boolean> {
   if (kvEnabled()) {
-    const redis = await getRedis();
-    const ok = await redis.set(SLACK_POLL_CHAIN_KEY, "1", {
-      nx: true,
-      ex: ttlSeconds,
-    });
-    return ok === "OK";
+    try {
+      const redis = await getRedis();
+      const ok = await redis.set(SLACK_POLL_CHAIN_KEY, "1", {
+        nx: true,
+        ex: ttlSeconds,
+      });
+      return ok === "OK";
+    } catch (error) {
+      if (!noteRedisError(error)) throw error;
+    }
   }
   return updateStore((data) => {
     const until = Date.parse(data.slackPollNextScheduledAt ?? "") || 0;
@@ -255,9 +259,13 @@ export async function acquireSlackPollChainSlot(ttlSeconds = 52): Promise<boolea
 
 export async function releaseSlackPollChainSlot() {
   if (kvEnabled()) {
-    const redis = await getRedis();
-    await redis.del(SLACK_POLL_CHAIN_KEY);
-    return;
+    try {
+      const redis = await getRedis();
+      await redis.del(SLACK_POLL_CHAIN_KEY);
+      return;
+    } catch (error) {
+      if (!noteRedisError(error)) throw error;
+    }
   }
   await updateStore((data) => {
     data.slackPollNextScheduledAt = new Date(0).toISOString();

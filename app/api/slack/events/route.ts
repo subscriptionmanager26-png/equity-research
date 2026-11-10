@@ -56,7 +56,14 @@ export async function POST(request: Request) {
 
   if (payload.event) {
     if (payload.event_id) {
-      const fresh = await markSlackEventProcessed(payload.event_id);
+      let fresh = true;
+      try {
+        fresh = await markSlackEventProcessed(payload.event_id);
+      } catch (error) {
+        // Never drop an inbound Slack message because dedupe storage is down.
+        console.error("[relay] Slack event dedupe failed; processing anyway", error);
+        fresh = true;
+      }
       if (!fresh) {
         return NextResponse.json({ ok: true, duplicate: true });
       }

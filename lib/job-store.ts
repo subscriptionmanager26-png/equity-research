@@ -66,10 +66,12 @@ export async function isJobsMigrated(): Promise<boolean> {
     migratedCache = Boolean(flag);
     migratedCheckAt = Date.now();
     return migratedCache;
-  } catch {
-    migratedCache = false;
+  } catch (error) {
+    noteRedisError(error);
+    // Assume migrated so we stop burning Redis EXISTS every request.
+    migratedCache = true;
     migratedCheckAt = Date.now();
-    return false;
+    return true;
   }
 }
 

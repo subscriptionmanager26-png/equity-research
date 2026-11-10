@@ -73,6 +73,7 @@ async function ensureJobMigration() {
       }
     })()
       .catch((error) => {
+        noteRedisError(error);
         migrationCooldownUntil = Date.now() + 60_000;
         console.error("[relay] Job migration failed", error);
       })
@@ -540,13 +541,21 @@ export async function getSlackThread(
 
 export async function markSlackEventProcessed(eventId: string): Promise<boolean> {
   if (kvEnabled()) {
-    const { getRedis } = await import("@/lib/store");
-    const redis = await getRedis();
-    const ok = await redis.set(`relay:slack-event:${eventId}`, "1", {
-      nx: true,
-      ex: 60 * 60 * 24 * 7,
-    });
-    if (ok !== "OK") return false;
+    try {
+      const { getRedis } = await import("@/lib/store");
+      const redis = await getRedis();
+      const ok = await redis.set(`relay:slack-event:${eventId}`, "1", {
+        nx: true,
+        ex: 60 * 60 * 24 * 7,
+      });
+      // Redis NX is the dedupe source of truth — skip dual-writing the store.
+      return ok === "OK";
+    } catch (error) {
+      if (!noteRedisError(error)) throw error;
+      console.error(
+        "[relay] Slack event dedupe Redis failed; using Blob contingency",
+      );
+    }
   }
   return updateStore((data) => {
     data.processedSlackEvents = data.processedSlackEvents ?? [];

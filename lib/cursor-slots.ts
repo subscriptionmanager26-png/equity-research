@@ -1,3 +1,4 @@
+import { noteRedisError } from "@/lib/redis-failover";
 import { getRedis, kvEnabled } from "@/lib/store";
 
 const SLOT_KEY = "relay:cursor:inflight";
@@ -13,21 +14,31 @@ export async function acquireCursorSlot(): Promise<
   { ok: true } | { ok: false; retryAfterSeconds: number }
 > {
   if (!kvEnabled()) return { ok: true };
-  const redis = await getRedis();
-  const current = Number((await redis.get<number | string>(SLOT_KEY)) ?? 0);
-  if (current >= maxInflight()) {
-    return { ok: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
+  try {
+    const redis = await getRedis();
+    const current = Number((await redis.get<number | string>(SLOT_KEY)) ?? 0);
+    if (current >= maxInflight()) {
+      return { ok: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
+    }
+    await redis.incr(SLOT_KEY);
+    await redis.expire(SLOT_KEY, 120);
+    return { ok: true };
+  } catch (error) {
+    if (!noteRedisError(error)) throw error;
+    // Quota/outage: allow dispatch rather than stall the queue.
+    return { ok: true };
   }
-  await redis.incr(SLOT_KEY);
-  await redis.expire(SLOT_KEY, 120);
-  return { ok: true };
 }
 
 export async function releaseCursorSlot() {
   if (!kvEnabled()) return;
-  const redis = await getRedis();
-  const next = await redis.decr(SLOT_KEY);
-  if (next < 0) {
-    await redis.set(SLOT_KEY, 0);
+  try {
+    const redis = await getRedis();
+    const next = await redis.decr(SLOT_KEY);
+    if (next < 0) {
+      await redis.set(SLOT_KEY, 0);
+    }
+  } catch (error) {
+    if (!noteRedisError(error)) throw error;
   }
 }
