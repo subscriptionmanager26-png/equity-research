@@ -85,10 +85,34 @@ export async function POST(request: Request) {
 
   const job = await findDispatchedJobForAgentId(agentId);
   if (!job) {
+    // Listening / timed remind: agent wakes after the Slack ack job is already replied.
+    const {
+      deliverAgentLateUpdate,
+      findRepliedJobForAgentId,
+    } = await import("@/lib/cursor-late-delivery");
+    const replied = await findRepliedJobForAgentId(agentId);
+    if (!replied) {
+      console.info(
+        `[relay] Status webhook for ${agentId} (${status}) — no dispatched or replied job matched`,
+      );
+      return NextResponse.json({ ok: true, matched: false, agentId, status });
+    }
+
     console.info(
-      `[relay] Status webhook for ${agentId} (${status}) — no dispatched job matched`,
+      `[relay] Status webhook ${webhookEvent} ${status} for ${agentId} → late update on ${replied.id}`,
     );
-    return NextResponse.json({ ok: true, matched: false, agentId, status });
+    const late = await deliverAgentLateUpdate(replied.id, agentId);
+    return NextResponse.json({
+      ok: true,
+      matched: true,
+      lateDelivery: true,
+      delivered: late.delivered,
+      reason: late.reason,
+      jobId: replied.id,
+      agentId,
+      status,
+      webhookId: webhookId || undefined,
+    });
   }
 
   console.info(

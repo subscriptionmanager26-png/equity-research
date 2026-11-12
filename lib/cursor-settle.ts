@@ -224,6 +224,34 @@ export async function settleAgentJob(
       `[relay] Settled ${jobId} via ${trigger} (${agentId}) — ${delivery.files.length} file(s)`,
     );
 
+    if (
+      !failed &&
+      (claimed.source === "slack" || claimed.source === "telegram")
+    ) {
+      const { shouldWatchForLateDelivery } = await import(
+        "@/lib/cursor-late-delivery"
+      );
+      if (
+        shouldWatchForLateDelivery({
+          agentStatus: agent.status,
+          prompt: claimed.prompt,
+          answer: message,
+        })
+      ) {
+        const { enqueueJobLateWatch, qstashConfigured } = await import(
+          "@/lib/qstash"
+        );
+        if (qstashConfigured()) {
+          await enqueueJobLateWatch(jobId, 1).catch((error) => {
+            console.error(
+              `[relay] Failed to enqueue late-watch for ${jobId}`,
+              error,
+            );
+          });
+        }
+      }
+    }
+
     if (needsFollowUp) {
       return {
         ok: true,

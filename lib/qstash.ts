@@ -9,12 +9,24 @@ import { getConfig } from "@/lib/config";
 export const SETTLE_BACKOFF_SECONDS = [60, 120, 300, 600, 1200] as const;
 export const SETTLE_POLL_MAX_ATTEMPTS = SETTLE_BACKOFF_SECONDS.length;
 
+/** After ack delivery, watch for Listening / timed-remind wakes on the same agent. */
+export const LATE_WATCH_BACKOFF_SECONDS = [300, 600, 1200, 2400, 3600] as const;
+export const LATE_WATCH_MAX_ATTEMPTS = LATE_WATCH_BACKOFF_SECONDS.length;
+
 export function settleDelayForAttempt(attempt: number): number {
   if (attempt < 1) return SETTLE_BACKOFF_SECONDS[0];
   if (attempt > SETTLE_POLL_MAX_ATTEMPTS) {
     return SETTLE_BACKOFF_SECONDS[SETTLE_POLL_MAX_ATTEMPTS - 1];
   }
   return SETTLE_BACKOFF_SECONDS[attempt - 1];
+}
+
+export function lateWatchDelayForAttempt(attempt: number): number {
+  if (attempt < 1) return LATE_WATCH_BACKOFF_SECONDS[0];
+  if (attempt > LATE_WATCH_MAX_ATTEMPTS) {
+    return LATE_WATCH_BACKOFF_SECONDS[LATE_WATCH_MAX_ATTEMPTS - 1];
+  }
+  return LATE_WATCH_BACKOFF_SECONDS[attempt - 1];
 }
 
 export function qstashToken() {
@@ -39,6 +51,14 @@ export function qstashSettleUrl() {
     throw new Error("PUBLIC_URL is required to enqueue job settle");
   }
   return `${publicUrl}/api/jobs/settle`;
+}
+
+export function qstashLateWatchUrl() {
+  const { publicUrl } = getConfig();
+  if (!publicUrl) {
+    throw new Error("PUBLIC_URL is required to enqueue late watch");
+  }
+  return `${publicUrl}/api/jobs/late-watch`;
 }
 
 function cronHeaders(): Record<string, string> {
@@ -97,6 +117,35 @@ export async function enqueueJobSettle(
     headers: cronHeaders(),
     retries: 2,
     deduplicationId: `settle-${jobId}-${attempt}`,
+    delay,
+  });
+}
+
+/**
+ * Sparse checks after a job is already replied — catches Cursor Listening
+ * reminder wakes if the status webhook is missed.
+ */
+export async function enqueueJobLateWatch(
+  jobId: string,
+  attempt: number,
+  options?: { delaySeconds?: number },
+) {
+  const token = qstashToken();
+  if (!token) {
+    throw new Error("QSTASH_TOKEN is not configured");
+  }
+  if (attempt < 1 || attempt > LATE_WATCH_MAX_ATTEMPTS) {
+    throw new Error(`late-watch attempt out of range: ${attempt}`);
+  }
+  const { Client } = await import("@upstash/qstash");
+  const client = new Client({ token });
+  const delay = options?.delaySeconds ?? lateWatchDelayForAttempt(attempt);
+  return client.publishJSON({
+    url: qstashLateWatchUrl(),
+    body: { jobId, attempt },
+    headers: cronHeaders(),
+    retries: 2,
+    deduplicationId: `late-watch-${jobId}-${attempt}`,
     delay,
   });
 }
