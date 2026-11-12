@@ -63,7 +63,7 @@ export function shouldWatchForLateDelivery(input: {
   answer?: string;
 }) {
   const text = `${input.prompt ?? ""}\n${input.answer ?? ""}`;
-  return /\bremind(er| me)?\b|\bin\s+\d+\s*(min|minute|minutes|hour|hours|hr|hrs)\b|\blistening\b|\bi['’]?ll ping\b/i.test(
+  return /\bremind(er| me)?\b|\bin\s+\d+\s*(minutes?|mins?|hours?|hrs?)\b|\blistening\b|\bi['’]?ll ping\b/i.test(
     text,
   );
 }

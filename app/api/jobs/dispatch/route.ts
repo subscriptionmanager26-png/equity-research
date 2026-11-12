@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { getJob } from "@/lib/jobs";
 import { acquireCursorSlot, releaseCursorSlot } from "@/lib/cursor-slots";
 import { enqueueJobDispatch, verifyQStashRequest } from "@/lib/qstash";
-import { completeJobDispatch } from "@/lib/relay";
+import { completeJobDispatch, fulfillRelayReminder } from "@/lib/relay";
+import { parseTimedReminder } from "@/lib/reminders";
 
 /** Cursor create can take a while; settle is via status webhook + sparse QStash backoff. */
 export const maxDuration = 60;
@@ -33,11 +34,30 @@ export async function POST(request: Request) {
   if (!job) {
     return NextResponse.json({ error: "job not found", jobId }, { status: 404 });
   }
-  if (job.status === "dispatched" || job.status === "replied" || job.status === "delivering") {
+  if (job.status === "replied" || job.status === "error") {
     return NextResponse.json({ ok: true, skipped: true, status: job.status, jobId });
   }
-  if (job.status === "error") {
-    return NextResponse.json({ ok: true, skipped: true, status: "error", jobId });
+
+  // Timed reminds: Relay+QStash owns the timer (no Cursor slot needed).
+  const reminder = parseTimedReminder(job.prompt);
+  if (
+    reminder &&
+    !(job.files?.length) &&
+    (job.source === "slack" || job.source === "telegram") &&
+    !job.reply
+  ) {
+    const updated = await fulfillRelayReminder(job, reminder);
+    return NextResponse.json({
+      ok: true,
+      jobId: updated.id,
+      status: updated.status,
+      reminder: true,
+      delaySeconds: reminder.delaySeconds,
+    });
+  }
+
+  if (job.status === "dispatched" || job.status === "delivering") {
+    return NextResponse.json({ ok: true, skipped: true, status: job.status, jobId });
   }
 
   const slot = await acquireCursorSlot();
@@ -58,6 +78,7 @@ export async function POST(request: Request) {
       jobId: updated.id,
       status: updated.status,
       cursorAgentId: updated.cursorAgentId ?? null,
+      reminder: updated.reply?.status === "remind_scheduled" || undefined,
     });
   } finally {
     await releaseCursorSlot().catch(() => undefined);

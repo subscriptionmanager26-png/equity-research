@@ -61,6 +61,14 @@ export function qstashLateWatchUrl() {
   return `${publicUrl}/api/jobs/late-watch`;
 }
 
+export function qstashRemindUrl() {
+  const { publicUrl } = getConfig();
+  if (!publicUrl) {
+    throw new Error("PUBLIC_URL is required to enqueue reminders");
+  }
+  return `${publicUrl}/api/jobs/remind`;
+}
+
 function cronHeaders(): Record<string, string> {
   const secret = process.env.CRON_SECRET?.trim();
   const headers: Record<string, string> = {};
@@ -150,21 +158,52 @@ export async function enqueueJobLateWatch(
   });
 }
 
+/** Fire a Relay-owned Slack/Telegram reminder after delaySeconds. */
+export async function enqueueJobRemind(
+  jobId: string,
+  delaySeconds: number,
+  task: string,
+) {
+  const token = qstashToken();
+  if (!token) {
+    throw new Error("QSTASH_TOKEN is not configured");
+  }
+  const delay = Math.max(60, Math.floor(delaySeconds));
+  const { Client } = await import("@upstash/qstash");
+  const client = new Client({ token });
+  return client.publishJSON({
+    url: qstashRemindUrl(),
+    body: { jobId, task },
+    headers: cronHeaders(),
+    retries: 3,
+    deduplicationId: `remind-${jobId}-${delay}`,
+    delay,
+  });
+}
+
 export async function verifyQStashRequest(request: Request, rawBody: string) {
+  const secret = process.env.CRON_SECRET?.trim();
+  const header = request.headers.get("authorization") ?? "";
+  if (secret && header === `Bearer ${secret}`) {
+    return true;
+  }
+
   const current = process.env.QSTASH_CURRENT_SIGNING_KEY?.trim();
   const next = process.env.QSTASH_NEXT_SIGNING_KEY?.trim();
   if (!current) {
-    // Local/dev without signing keys: allow CRON_SECRET bearer instead.
-    const secret = process.env.CRON_SECRET?.trim();
-    if (!secret) return false;
-    const header = request.headers.get("authorization") ?? "";
-    return header === `Bearer ${secret}`;
+    return false;
   }
   const signature = request.headers.get("upstash-signature") ?? "";
-  const { Receiver } = await import("@upstash/qstash");
-  const receiver = new Receiver({
-    currentSigningKey: current,
-    nextSigningKey: next || current,
-  });
-  return receiver.verify({ signature, body: rawBody });
+  if (!signature) return false;
+  try {
+    const { Receiver } = await import("@upstash/qstash");
+    const receiver = new Receiver({
+      currentSigningKey: current,
+      nextSigningKey: next || current,
+    });
+    return await receiver.verify({ signature, body: rawBody });
+  } catch (error) {
+    console.error("[relay] QStash signature verify failed", error);
+    return false;
+  }
 }

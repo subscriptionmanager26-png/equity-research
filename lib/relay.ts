@@ -19,9 +19,15 @@ import {
 } from "@/lib/jobs";
 import {
   enqueueJobDispatch,
+  enqueueJobRemind,
   enqueueJobSettle,
   qstashConfigured,
 } from "@/lib/qstash";
+import {
+  parseTimedReminder,
+  reminderAckText,
+  type ParsedReminder,
+} from "@/lib/reminders";
 import { ackSlackDone, sendSlackFile, sendSlackMessage, slackUploadErrorDetail } from "@/lib/slack";
 import { getSlackInstall } from "@/lib/slack-install";
 import { sendTelegramFile, sendTelegramMessage } from "@/lib/telegram";
@@ -102,8 +108,81 @@ export async function ingestAndDispatch(input: IngestInput): Promise<Job> {
   return completeJobDispatch(job);
 }
 
+/**
+ * Short timed reminds are owned by Relay + QStash, not Cursor Listening.
+ * Ack immediately and schedule the Slack/Telegram ping.
+ */
+export async function fulfillRelayReminder(
+  job: Job,
+  reminder?: ParsedReminder,
+): Promise<Job> {
+  const parsed = reminder ?? parseTimedReminder(job.prompt);
+  if (!parsed) {
+    throw new Error("Not a timed reminder");
+  }
+  if (!qstashConfigured()) {
+    throw new Error("QSTASH_TOKEN is required to schedule reminders");
+  }
+
+  const ack = reminderAckText(parsed);
+  const delivery = await deliverReply({
+    jobId: job.id,
+    job,
+    status: "finished",
+    message: ack,
+    files: [],
+  });
+
+  await enqueueJobRemind(job.id, parsed.delaySeconds, parsed.task);
+
+  const now = new Date().toISOString();
+  return upsertJob({
+    ...job,
+    updatedAt: now,
+    status: "replied",
+    error: undefined,
+    pendingArtifacts: undefined,
+    cursorAgentId: job.cursorAgentId,
+    reply: {
+      message: ack,
+      status: "remind_scheduled",
+      receivedAt: now,
+      telegramMessageId: delivery.telegramMessageId,
+      slackMessageTs: delivery.slackMessageTs,
+      files: [],
+    },
+    events: [
+      {
+        at: now,
+        type: "remind_scheduled",
+        detail: `Relay will ping in ${parsed.label}: ${parsed.task}`,
+      },
+      {
+        at: now,
+        type: "replied",
+        detail: deliveryDetail(job, delivery),
+      },
+      ...(job.events ?? []),
+    ],
+  });
+}
+
 /** Dispatch a newly created job to Cursor (or retry a stale queued job). */
 export async function completeJobDispatch(job: Job): Promise<Job> {
+  const reminder = parseTimedReminder(job.prompt);
+  if (
+    reminder &&
+    (job.source === "slack" || job.source === "telegram") &&
+    !(job.files?.length)
+  ) {
+    try {
+      return await fulfillRelayReminder(job, reminder);
+    } catch (error) {
+      console.error(`[relay] Relay reminder failed for ${job.id}`, error);
+      // Fall through to Cursor so the user still gets an ack attempt.
+    }
+  }
+
   try {
     const result = await dispatchToCursor(job);
     if (!result.ok) {
