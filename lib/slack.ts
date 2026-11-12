@@ -70,6 +70,54 @@ export function getSlackAuthToken() {
   return token;
 }
 
+/**
+ * Tokens to try for private file download. Bot DMs / Events API files need the
+ * bot token first — user-token-first auth often 403s on files.slack.com.
+ */
+export async function getSlackFileDownloadTokens(teamId?: string) {
+  const cfg = getConfig();
+  const tokens: string[] = [];
+  const push = (token?: string) => {
+    const value = token?.trim();
+    if (value && !tokens.includes(value)) tokens.push(value);
+  };
+
+  if (teamId) {
+    try {
+      const installToken = await getSlackInstallBotToken(teamId);
+      push(installToken);
+    } catch {
+      // Redis/install lookup optional
+    }
+  }
+  push(cfg.slackBotToken);
+  push(cfg.slackUserToken);
+  if (!tokens.length) {
+    throw new Error("Set SLACK_BOT_TOKEN or SLACK_USER_TOKEN");
+  }
+  return tokens;
+}
+
+/** Fetch Slack private file URLs, keeping auth across files.slack.com redirects. */
+export async function fetchSlackPrivateFile(url: string, token: string) {
+  let current = url;
+  for (let hop = 0; hop < 5; hop += 1) {
+    const slackHost = /(?:^|\.)slack\.com$/i.test(new URL(current).hostname);
+    const response = await fetch(current, {
+      headers: slackHost ? { Authorization: `Bearer ${token}` } : undefined,
+      redirect: "manual",
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) return response;
+      current = new URL(location, current).toString();
+      continue;
+    }
+    return response;
+  }
+  throw new Error("Too many redirects downloading Slack file");
+}
+
 /** Read/search/history — prefer user token when available. */
 export function getSlackReadClient() {
   const cfg = getConfig();

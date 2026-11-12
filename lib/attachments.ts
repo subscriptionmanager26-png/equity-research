@@ -36,22 +36,31 @@ export async function resolveJobFileForCursor(
 
 async function resolveSlackFile(job: Job, file: JobFile) {
   const { publicUrl } = getConfig();
-  const { getSlackAuthToken } = await import("@/lib/slack");
-  const token = getSlackAuthToken();
+  const {
+    fetchSlackPrivateFile,
+    getSlackFileDownloadTokens,
+  } = await import("@/lib/slack");
   if (!file.url) throw new Error("Missing Slack file URL");
+
+  const tokens = await getSlackFileDownloadTokens(job.slackTeamId);
+  let lastStatus = 0;
+  let bytes: Buffer | undefined;
+  for (const token of tokens) {
+    const response = await fetchSlackPrivateFile(file.url, token);
+    lastStatus = response.status;
+    if (response.ok) {
+      bytes = Buffer.from(await response.arrayBuffer());
+      break;
+    }
+  }
+  if (!bytes) {
+    throw new Error(`Could not download ${file.name}: HTTP ${lastStatus}`);
+  }
 
   const dir = path.join(ATTACHMENTS_DIR, job.id);
   await mkdir(dir, { recursive: true });
   const safeName = file.name.replace(/[^\w.-]+/g, "_");
   const target = path.join(dir, safeName);
-
-  const response = await fetch(file.url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) {
-    throw new Error(`Could not download ${file.name}: HTTP ${response.status}`);
-  }
-  const bytes = Buffer.from(await response.arrayBuffer());
   await writeFile(target, bytes);
 
   if (publicUrl) {
