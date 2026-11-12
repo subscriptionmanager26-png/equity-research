@@ -21,7 +21,7 @@ function deliveryInstructions(job: Job, hasFiles: boolean) {
         ? "Telegram"
         : "the user";
   const fileLine = hasFiles
-    ? " Download each files[].url immediately (they expire in about an hour). If a file has content_base64 instead of url, decode that base64 payload."
+    ? " Download each files[].url as soon as you start (Relay attachment links stay available for the job). If a file has content_base64 instead of url, decode that base64 payload."
     : "";
   const artifactLine = ` For stocks, companies, ETFs, or any financial instrument, follow .cursor/skills/research/financial-analysis/SKILL.md. For long reports, write the file to artifacts/<topic>-report.md AND copy the same file to /opt/cursor/artifacts/<topic>-report.md (Relay only receives the /opt/cursor/artifacts copy). Short answers stay in chat only. Do NOT create PDF unless the user explicitly asks for PDF.`;
   const noPostLine = ` Do not POST to ${channel}, Relay, reply_url, or any other URL. Do not mention delivery, webhooks, or ${channel}.`;
