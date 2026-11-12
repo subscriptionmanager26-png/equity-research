@@ -9,7 +9,6 @@ const ATTACHMENTS_DIR = process.env.VERCEL
   ? path.join(os.tmpdir(), "relay-attachments")
   : path.join(process.cwd(), ".data", "attachments");
 const MAX_INLINE_BYTES = 12 * 1024 * 1024;
-const ATTACH_BLOB_PREFIX = "relay-attachments/";
 
 export type CursorFilePayload = {
   name: string;
@@ -21,14 +20,6 @@ export type CursorFilePayload = {
 
 export function safeAttachmentName(name: string) {
   return name.replace(/[^\w.-]+/g, "_");
-}
-
-export function attachmentBlobPath(jobId: string, name: string) {
-  return `${ATTACH_BLOB_PREFIX}${jobId}/${safeAttachmentName(name)}`;
-}
-
-function blobTokenPresent() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
 }
 
 export async function resolveJobFileForCursor(
@@ -45,47 +36,6 @@ export async function resolveJobFileForCursor(
     size: file.size,
     url: await telegramFileUrl(file.fileId),
   };
-}
-
-async function persistAttachmentBytes(
-  jobId: string,
-  safeName: string,
-  bytes: Buffer,
-  mime?: string,
-) {
-  const dir = path.join(ATTACHMENTS_DIR, jobId);
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, safeName), bytes);
-
-  if (!blobTokenPresent()) return;
-  try {
-    const { put } = await import("@vercel/blob");
-    await put(attachmentBlobPath(jobId, safeName), bytes, {
-      access: "private",
-      allowOverwrite: true,
-      addRandomSuffix: false,
-      contentType: mime || "application/octet-stream",
-      cacheControlMaxAge: 60 * 60 * 24,
-    });
-  } catch (error) {
-    console.error(`[relay] Blob persist failed for ${jobId}/${safeName}`, error);
-  }
-}
-
-async function readAttachmentFromBlob(jobId: string, safeName: string) {
-  if (!blobTokenPresent()) return undefined;
-  try {
-    const { get } = await import("@vercel/blob");
-    const result = await get(attachmentBlobPath(jobId, safeName), {
-      access: "private",
-      useCache: false,
-    });
-    if (!result || result.statusCode !== 200 || !result.stream) return undefined;
-    return Buffer.from(await new Response(result.stream).arrayBuffer());
-  } catch (error) {
-    console.error(`[relay] Blob read failed for ${jobId}/${safeName}`, error);
-    return undefined;
-  }
 }
 
 async function downloadSlackFileBytes(job: Job, file: JobFile) {
@@ -107,14 +57,27 @@ async function downloadSlackFileBytes(job: Job, file: JobFile) {
   throw new Error(`Could not download ${file.name}: HTTP ${lastStatus}`);
 }
 
+async function cacheLocally(
+  jobId: string,
+  safeName: string,
+  bytes: Buffer,
+) {
+  try {
+    const dir = path.join(ATTACHMENTS_DIR, jobId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, safeName), bytes);
+  } catch (error) {
+    console.error(`[relay] local attachment cache failed for ${jobId}`, error);
+  }
+}
+
 async function resolveSlackFile(job: Job, file: JobFile) {
   const { publicUrl } = getConfig();
+  // Warm /tmp for same-isolate hits only — durability is Slack re-fetch on GET.
   const bytes = await downloadSlackFileBytes(job, file);
   const safeName = safeAttachmentName(file.name);
-  await persistAttachmentBytes(job.id, safeName, bytes, file.mime);
+  await cacheLocally(job.id, safeName, bytes);
 
-  // Prefer a durable Relay URL. /tmp alone dies across Vercel isolates — Blob
-  // (and Slack re-download fallback) keep /api/attachments working for Cursor.
   if (publicUrl) {
     return {
       name: file.name,
@@ -138,7 +101,11 @@ async function resolveSlackFile(job: Job, file: JobFile) {
   };
 }
 
-/** Load attachment bytes for /api/attachments — local, Blob, then Slack. */
+/**
+ * Serve attachment bytes without growing Blob.
+ * 1) same-isolate /tmp cache
+ * 2) re-download from Slack using the job's stored private URL + bot token
+ */
 export async function loadAttachmentBytes(jobId: string, name: string) {
   const safeName = safeAttachmentName(decodeURIComponent(name));
 
@@ -146,17 +113,6 @@ export async function loadAttachmentBytes(jobId: string, name: string) {
     return await readFile(path.join(ATTACHMENTS_DIR, jobId, safeName));
   } catch {
     // continue
-  }
-
-  const fromBlob = await readAttachmentFromBlob(jobId, safeName);
-  if (fromBlob) {
-    await mkdir(path.join(ATTACHMENTS_DIR, jobId), { recursive: true }).catch(
-      () => undefined,
-    );
-    await writeFile(path.join(ATTACHMENTS_DIR, jobId, safeName), fromBlob).catch(
-      () => undefined,
-    );
-    return fromBlob;
   }
 
   const { getJob } = await import("@/lib/jobs");
@@ -167,7 +123,7 @@ export async function loadAttachmentBytes(jobId: string, name: string) {
   if (!job || !file) return undefined;
 
   const bytes = await downloadSlackFileBytes(job, file);
-  await persistAttachmentBytes(jobId, safeName, bytes, file.mime);
+  await cacheLocally(jobId, safeName, bytes);
   return bytes;
 }
 
