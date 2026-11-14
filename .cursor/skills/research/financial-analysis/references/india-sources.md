@@ -83,17 +83,28 @@ When researching via web search, these patterns return the cleanest results:
 
 ## 5. Document Checklist (8-quarter default scope for India)
 
-Adapted from SKILL.md Part "Data-Gathering Checklist." Total: **13–14 documents** per company.
+Adapted from SKILL.md Part "Data-Gathering Checklist." **Primary documents (§5A) must be read before modelling.** Quarterly decks alone are not enough for a first-time profile or thesis.
 
-**Filings (8 total)**
-- [ ] Annual Report — most recent FY (contains Q4 figures, full audit)
-- [ ] Annual Report — prior FY
-- [ ] Quarterly Financial Results — current FY Q3
-- [ ] Quarterly Financial Results — current FY Q2
-- [ ] Quarterly Financial Results — current FY Q1
-- [ ] Quarterly Financial Results — prior FY Q3
-- [ ] Quarterly Financial Results — prior FY Q2
-- [ ] Quarterly Financial Results — prior FY Q1
+### 5A. Primary pack (read first — mandatory for company profile / IC / thesis)
+
+- [ ] Annual Report — most recent FY (Directors' Report, MD&A, CG, Auditor's Report + CARO + KAMs, SA + Consol notes)
+- [ ] Annual Report — prior FY (same sections; compare related parties, concentration, CFO)
+- [ ] Annual Report — FY before that if the company has grown or acquired heavily in the last 3 years
+- [ ] Offer document(s) if any exist in the last ~7 years:
+  - [ ] IPO RHP / Prospectus / SME prospectus
+  - [ ] QIP Placement Document / Preliminary Placement Document
+  - [ ] Preferential / share-swap EGM notices + valuation reports
+  - [ ] Monitoring-agency / statement-of-deviation reports (use of proceeds)
+- [ ] Latest credit-rating rationale (India Ratings / CARE / CRISIL / ICRA), if available
+- [ ] For B2B / niche manufacturers: **1–2 peer RHPs** for industry chapter + capacity / concentration benchmarks (do not copy unverified broker industry tables)
+
+**Extract into `~/research/<TICKER>/docs/` with page refs:** related-party transactions; customer/supplier concentration; contingent liabilities & litigation; auditor qualifications / CARO / resignations; subsidiary AOC-1 + goodwill; borrowings / GML / guarantees; inventory & receivables ageing; CFO vs PAT; capacity / volumes; objects of issue vs actual use of proceeds; risk factors that conflict with current decks.
+
+### 5B. Quarterly update pack (after 5A)
+
+**Filings**
+- [ ] Quarterly Financial Results — current FY Q3 / Q2 / Q1
+- [ ] Quarterly Financial Results — prior FY Q3 / Q2 / Q1 (as needed for 8-quarter scope)
 - [ ] Shareholding Pattern (Reg. 31) — most recent quarter
 - [ ] Shareholding Pattern — same quarter prior year
 
@@ -103,11 +114,11 @@ Adapted from SKILL.md Part "Data-Gathering Checklist." Total: **13–14 document
 - [ ] Same quarter prior year (YoY tone baseline)
 - [ ] One mid-range call (~3 quarters back)
 
-**Companion documents (optional but recommended)**
+**Companion documents**
 - [ ] Latest earnings press release
-- [ ] Latest investor presentation
+- [ ] Latest investor presentation (update only — not a substitute for 5A)
 - [ ] BRSR section (if applicable — top 1000 by mkt cap)
-- [ ] Most recent Postal Ballot notice (if any)
+- [ ] Most recent Postal Ballot / EGM notice (fund raises, acquisitions)
 
 **Always pull both Standalone AND Consolidated** of every financial filing. Use Consolidated for analysis; keep Standalone for parent-only debt investigations.
 
