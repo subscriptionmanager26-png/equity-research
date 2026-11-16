@@ -58,14 +58,19 @@ Persist everything under `~/research/<TICKER>/` with `_manifest.json` per `SKILL
 
 ## 4. Data you must collect
 
-### Minimum pack (India listed)
+### Minimum pack (India listed) — primary docs first
 
-- [ ] Latest **2 annual reports** or investor decks with multi-year P&L
-- [ ] Latest **investor presentation** (best MD&A substitute — has mix tables)
+Do **not** start from investor decks. Read the company's own audited and offer documents before drafting or modelling. See `india-data-pull-recipe.md` §0.
+
+- [ ] Latest **2–3 annual reports** (read: Directors' Report, MD&A, Auditor's Report + CARO, SA + Consol notes — not just the summary P&L)
+- [ ] **Offer documents** if any (IPO / SME prospectus, QIP placement document, preferential / share-swap notices, monitoring-agency reports)
+- [ ] Latest **credit-rating rationale** if available
+- [ ] Latest **investor presentation** (quarterly update + mix tables — after the AR/offer pass)
 - [ ] Latest **earnings release**
 - [ ] Latest **2–4 concall transcripts** (guidance lives here)
 - [ ] Screener/Trendlyne snapshot (price, mcap, shareholding) — label the as-of date
 - [ ] Order book / backlog definitions (peak annual vs lifetime backlog)
+- [ ] For niche B2B names: **1–2 peer RHPs** for industry / capacity / concentration benchmarks
 
 ### Nice to have
 
@@ -73,7 +78,7 @@ Persist everything under `~/research/<TICKER>/` with `_manifest.json` per `SKILL
 - Shareholding pattern (Reg 31)
 - Light India retail sweep (ValuePickr etc.) — optional for general-audience profiles
 
-**Source priority:** company IR → NSE archives → BSE → Screener. Always use a browser User-Agent for NSE/BSE curls.
+**Source priority:** company IR / annual reports / offer docs → NSE archives → BSE → peer RHPs → Screener. Always use a browser User-Agent for NSE/BSE curls. Never copy industry or peer tables from a broker note without checking the underlying offer document.
 
 ---
 

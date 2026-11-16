@@ -2,6 +2,42 @@
 
 Concrete, copy-pasteable sequence for fetching an Indian listed company's filings to `~/research/<TICKER>/sources/` and producing a memo. Worked example: **<TICKER> (<Company Name>)** — 2026-07-01 run. The 5 sources fetched in this session totalled 34 MB and gave complete FY22–FY26 + FY27 guidance in one agent loop without any delegation.
 
+## 0. Primary documents first (hard rule — Nov 2026)
+
+**Do not draft a company profile, initiating-coverage-style report, projection model, or thesis memo from investor presentations alone.** Investor decks are the fastest source of headline numbers; they are not a substitute for the company's audited and offer documents.
+
+### Required before any modelling or narrative draft
+
+Pull and **read** (not just download / keyword-search) these, in order:
+
+1. **Latest 2–3 Annual Reports** (parent) — Directors' Report, MD&A, Corporate Governance, Auditor's Report (incl. CARO + Key Audit Matters), Standalone **and** Consolidated financials and notes.
+2. **Offer documents when they exist** — IPO RHP/Prospectus, Draft Red Herring Prospectus, SME prospectus, QIP Placement Document / Preliminary Placement Document, preferential-issue / share-swap EGM notices and valuation reports, CARE/CRISIL monitoring-agency reports on use of proceeds.
+3. **Credit-rating rationale** (India Ratings, CARE, CRISIL, ICRA) if published in the last 2–3 years.
+4. **Only then** investor presentations, earnings releases, and concall transcripts for the recent-quarter update.
+
+### Sections that must be extracted from Annual Reports / offer docs
+
+Write page-referenced notes under `~/research/<TICKER>/docs/` covering:
+
+- [ ] Related-party transactions (AOC-2 + Ind AS 24 note) — counterparties, nature, amounts by year
+- [ ] Customer / supplier concentration (top 1 / 5 / 10 %, named if disclosed; Ind AS 108 major customers)
+- [ ] Contingent liabilities, tax demands, material litigation
+- [ ] Auditor's report: qualifications, Emphasis of Matter, KAMs, CARO remarks (esp. bank stock statements vs books), auditor resignations / fee jumps
+- [ ] Subsidiary financials + Form AOC-1; inter-company eliminations; goodwill / purchase-price allocation
+- [ ] Borrowings: banks, gold metal loans, limits, rates, security, promoter guarantees, pledged shares
+- [ ] Inventory, receivables ageing, working-capital days, CFO vs PAT (multi-year)
+- [ ] Capacity, utilisation, volumes (kg / units) if disclosed
+- [ ] Objects of issue / use of proceeds vs monitoring-agency reports
+- [ ] Risk factors in offer documents that conflict with current investor-presentation claims
+
+### What investor presentations are for
+
+Decks and concalls are for **updating** the picture after the primary read: latest quarter P&L, guidance changes, Advance Gold / mix commentary, named clients, and management tone. They do **not** replace the annual-report / offer-document pass.
+
+### Anti-pattern (do not repeat)
+
+Treating a "two-deck sweep" or a thin IR presentation pack as enough to understand a company — then borrowing peer volumes, concentration history, and industry figures from a broker note. That path produced wrong volume labels, missed related-party acquisition economics, and missed auditor / cash-flow red flags on Sky Gold (Nov 2026). See §"Two-deck sweep" below for the narrow cases where decks-only is still allowed.
+
 ## 1. Identify the canonical URLs (5–10 min)
 
 Don't guess — start from the company IR site, which has the cleanest landing page for transcripts, presentations, and annual reports.
@@ -209,12 +245,13 @@ When the user asks "show me the trends over the last N years" (rather than a ful
 This is ~80% fewer PDFs than the full 17-quarter sweep and gives identical trend coverage. The <TICKER> 2-year run on 2026-07-01 was 2 investor decks (3MB + 2.5MB) + 1 press release = the entire revolver-mix, spend, fee, and profitability story across FY24–FY26. The investor presentation deck is the right artifact because it's what management chose to publish — it has the reconciled trend tables and the announced YoY deltas.
 
 When to use this vs the full sweep:
-- ✅ Use the two-deck sweep when the question is **trend visualisation** (charts over time) or **driver decomposition** (mix shifts, unit-economics trajectory, credit-cost cycle)
+- ✅ Use the two-deck sweep when the question is **trend visualisation** (charts over time) or **driver decomposition** (mix shifts, unit-economics trajectory, credit-cost cycle) **and** a primary Annual Report / offer-document pass has already been done for this ticker (or is being done in the same run).
+- ❌ Do **not** use decks-only for a first-time company profile, initiating coverage, acquisition diligence, related-party questions, or any buy/hold/sell thesis. Those require the §0 primary pack.
 - Use the full 8-quarter sweep when the question is a **full thesis memo with buy/hold/sell action**, requires concall tone analysis, or needs Standalone vs Consolidated comparison
 
-For credit-card issuers (<TICKER> pattern), the deck has *all* the metrics you need (P&L, asset quality, capital) for the 2-year sweep — the Annual Report adds only BRSR + governance, which is rarely the question.
+For credit-card issuers (<TICKER> pattern), once the latest Annual Report has been read for related parties, auditor remarks, and contingent liabilities, the investor decks often carry the trend metrics (mix, spend, fee, credit cost) for a 2-year visualisation. The Annual Report is still required on first contact with the name; it is not "rarely the question."
 
-For project-driven mid-caps (<Company> pattern — capital goods, EPC, defence), the deck still gives the trend but the Annual Report carries BRSR + the Related Party Transactions section that flags the governance risks.
+For project-driven mid-caps and promoter-led manufacturers (capital goods, EPC, defence, jewellery B2B, specialty chemicals), the Annual Report is mandatory: Related Party Transactions, CARO, goodwill / subsidiary notes, and borrowing security are where the governance and cash-flow story lives. Peer RHPs / industry chapters in offer documents are the right source for TAM / organised-share / outsourcing figures — do not invent them from memory or copy them unverified from a broker note.
 
 ## Credit-card-issuer data model (<TICKER> pattern)
 
