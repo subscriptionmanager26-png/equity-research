@@ -227,6 +227,7 @@ async function handleMention(
       slackMessageTs: event.ts,
       files,
       followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
+      cursorTokenSlot: prior?.cursorTokenSlot,
     });
     if (!job?.id) {
       throw new Error("Relay failed to save the job");
@@ -306,6 +307,7 @@ async function handleThreadMessage(
       slackMessageTs: event.ts,
       files,
       followUpAgentId: prior?.cursorAgentId ?? prior?.followUpAgentId,
+      cursorTokenSlot: prior?.cursorTokenSlot,
     });
     if (!job?.id) {
       throw new Error("Relay failed to save the job");

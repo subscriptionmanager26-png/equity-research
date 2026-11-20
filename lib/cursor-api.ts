@@ -1,11 +1,11 @@
-import { getConfig } from "@/lib/config";
+import { getActiveCursorToken } from "@/lib/cursor-token";
 
 const API = "https://api.cursor.com";
 export const MAX_ARTIFACT_BYTES = 45 * 1024 * 1024;
 export const MAX_ARTIFACTS = 8;
 
 function apiToken() {
-  return getConfig().cursorWebhookToken;
+  return getActiveCursorToken();
 }
 
 function isRetryableCursorStatus(status: number) {

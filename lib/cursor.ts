@@ -2,6 +2,13 @@ import { getConfig } from "@/lib/config";
 import { resolveJobFileForCursor } from "@/lib/attachments";
 import { AUTOMATION_PROMPT } from "@/lib/automation-prompt";
 import { cursorPost } from "@/lib/cursor-api";
+import {
+  listCursorTokenSlots,
+  orderCursorTokenSlots,
+  shouldFailoverCursorCreate,
+  withCursorToken,
+  type CursorTokenSlot,
+} from "@/lib/cursor-token";
 import type { Job } from "@/lib/types";
 
 const DEFAULT_AGENT_REPO =
@@ -161,73 +168,46 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function dispatchToCursor(job: Job) {
-  const { cursorWebhookUrl, cursorWebhookToken } = getConfig();
-  if (!cursorWebhookToken) {
-    throw new Error("Cursor API token is not configured (CURSOR_WEBHOOK_TOKEN)");
-  }
+export type CursorDispatchResult = {
+  ok: boolean;
+  status: number;
+  body: unknown;
+  cursorTokenSlot: CursorTokenSlot;
+};
 
-  if (useAutomationWebhook()) {
-    if (!cursorWebhookUrl) {
-      throw new Error("CURSOR_WEBHOOK_URL is required when CURSOR_USE_AUTOMATION_WEBHOOK=true");
-    }
-    const payload = await buildCursorPayload(job);
-    const response = await fetch(cursorWebhookUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${cursorWebhookToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    const text = await response.text();
-    let body: unknown = text;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      // keep raw text
-    }
-    return { ok: response.ok, status: response.status, body };
+async function dispatchAutomationWebhook(
+  job: Job,
+  token: string,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const { cursorWebhookUrl } = getConfig();
+  if (!cursorWebhookUrl) {
+    throw new Error(
+      "CURSOR_WEBHOOK_URL is required when CURSOR_USE_AUTOMATION_WEBHOOK=true",
+    );
   }
+  const payload = await buildCursorPayload(job);
+  const response = await fetch(cursorWebhookUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await response.text();
+  let body: unknown = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // keep raw text
+  }
+  return { ok: response.ok, status: response.status, body };
+}
 
+async function dispatchCloudAgentCreate(
+  job: Job,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
   const body = await buildCloudAgentBody(job);
-  const existingId = job.followUpAgentId?.trim() || standingAgentId();
-  if (existingId) {
-    const promptText = (body.prompt as { text: string }).text;
-    const followup = () =>
-      cursorPost(`/v0/agents/${existingId}/followup`, {
-        prompt: { text: promptText },
-      });
-    // Stay within serverless maxDuration (~60s): cap total busy-wait time.
-    const deadline = Date.now() + 45_000;
-    let last = await followup();
-    for (
-      let attempt = 0;
-      !last.ok &&
-      isBusyError(last.body) &&
-      attempt < 4 &&
-      Date.now() < deadline;
-      attempt++
-    ) {
-      console.info(
-        `[relay] Standing agent ${existingId} busy; retry ${attempt + 1}`,
-      );
-      await sleep(2000);
-      last = await followup();
-    }
-    if (last.ok) {
-      return {
-        ok: true,
-        status: last.status,
-        body: {
-          id: existingId,
-          ...(typeof last.body === "object" && last.body ? last.body : {}),
-        },
-      };
-    }
-    return last;
-  }
-
   const created = await cursorPost("/v0/agents", body);
   if (created.ok) return created;
 
@@ -245,4 +225,111 @@ export async function dispatchToCursor(job: Job) {
   if (v1Model) v1Body.model = v1Model;
   const v1 = await cursorPost("/v1/agents", v1Body);
   return v1.ok ? v1 : created;
+}
+
+async function dispatchCloudAgentFollowUp(
+  job: Job,
+  existingId: string,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const body = await buildCloudAgentBody(job);
+  const promptText = (body.prompt as { text: string }).text;
+  const followup = () =>
+    cursorPost(`/v0/agents/${existingId}/followup`, {
+      prompt: { text: promptText },
+    });
+  // Stay within serverless maxDuration (~60s): cap total busy-wait time.
+  const deadline = Date.now() + 45_000;
+  let last = await followup();
+  for (
+    let attempt = 0;
+    !last.ok &&
+    isBusyError(last.body) &&
+    attempt < 4 &&
+    Date.now() < deadline;
+    attempt++
+  ) {
+    console.info(
+      `[relay] Standing agent ${existingId} busy; retry ${attempt + 1}`,
+    );
+    await sleep(2000);
+    last = await followup();
+  }
+  if (last.ok) {
+    return {
+      ok: true,
+      status: last.status,
+      body: {
+        id: existingId,
+        ...(typeof last.body === "object" && last.body ? last.body : {}),
+      },
+    };
+  }
+  return last;
+}
+
+export async function dispatchToCursor(job: Job): Promise<CursorDispatchResult> {
+  const slots = listCursorTokenSlots();
+  if (!slots.length) {
+    throw new Error(
+      "Cursor API token is not configured (CURSOR_WEBHOOK_TOKEN or Cursor_webhook_token_saffronai)",
+    );
+  }
+
+  // Follow-ups / standing agents are account-bound — no cross-account failover.
+  // CURSOR_AGENT_ID only belongs to the primary API key account.
+  const followUpId = job.followUpAgentId?.trim();
+  const preferredSlot = job.cursorTokenSlot ?? "primary";
+  const standingId =
+    !followUpId && preferredSlot === "primary" ? standingAgentId() : undefined;
+  const existingId = followUpId || standingId;
+  if (existingId) {
+    const candidate = orderCursorTokenSlots(preferredSlot)[0]!;
+    const result = await withCursorToken(candidate.token, async () => {
+      if (useAutomationWebhook()) {
+        return dispatchAutomationWebhook(job, candidate.token);
+      }
+      return dispatchCloudAgentFollowUp(job, existingId);
+    });
+    return { ...result, cursorTokenSlot: candidate.slot };
+  }
+
+  const ordered = orderCursorTokenSlots(job.cursorTokenSlot);
+  let last: CursorDispatchResult | undefined;
+  for (const candidate of ordered) {
+    const result = await withCursorToken(candidate.token, async () => {
+      if (useAutomationWebhook()) {
+        return dispatchAutomationWebhook(job, candidate.token);
+      }
+      return dispatchCloudAgentCreate(job);
+    });
+    last = { ...result, cursorTokenSlot: candidate.slot };
+    if (result.ok) {
+      if (candidate.slot === "saffronai") {
+        console.info(
+          `[relay] Dispatched ${job.id} with Cursor_webhook_token_saffronai`,
+        );
+      }
+      return last;
+    }
+    if (
+      ordered.length > 1 &&
+      candidate !== ordered[ordered.length - 1] &&
+      shouldFailoverCursorCreate(result.status, result.body)
+    ) {
+      console.warn(
+        `[relay] Cursor ${candidate.slot} token failed HTTP ${result.status} for ${job.id}; trying alternate account`,
+      );
+      continue;
+    }
+    return last;
+  }
+
+  return (
+    last ?? {
+      ok: false,
+      status: 0,
+      body: "No Cursor API token configured",
+      cursorTokenSlot: "primary",
+    }
+  );
 }

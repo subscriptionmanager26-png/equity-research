@@ -97,6 +97,8 @@ export async function deliverAgentLateUpdate(
       return { ok: false, delivered: false, reason: "unsupported_source", jobId };
     }
 
+    const { withCursorTokenSlot } = await import("@/lib/cursor-token");
+    return withCursorTokenSlot(job.cursorTokenSlot, async () => {
     const agent = await getAgent(agentId);
     if (agentFailed(agent.status)) {
       return { ok: true, delivered: false, reason: "agent_failed", jobId };
@@ -145,6 +147,7 @@ export async function deliverAgentLateUpdate(
       `[relay] Late-delivered ${jobId} for ${agentId} (${assistantConversationText(messages).length} chars conv)`,
     );
     return { ok: true, delivered: true, jobId };
+    });
   } catch (error) {
     console.error(`[relay] late delivery failed for ${jobId}`, error);
     return {

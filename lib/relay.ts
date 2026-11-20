@@ -47,6 +47,7 @@ type IngestInput = {
   slackMessageTs?: string;
   files?: Job["files"];
   followUpAgentId?: string;
+  cursorTokenSlot?: Job["cursorTokenSlot"];
   telegramInboundMessageId?: number;
   telegramAckMessageId?: number;
 };
@@ -230,12 +231,17 @@ export async function completeJobDispatch(job: Job): Promise<Job> {
       cursorHttpStatus: result.status,
       cursorBody: result.body,
       cursorAgentId: agentId,
+      cursorTokenSlot: result.cursorTokenSlot,
       events: [
         {
           at: now,
           type: "dispatched",
           detail: agentId
-            ? `Started Cursor cloud agent (${agentId})`
+            ? `Started Cursor cloud agent (${agentId}${
+                result.cursorTokenSlot === "saffronai"
+                  ? ", saffronai account"
+                  : ""
+              })`
             : `Started Cursor cloud agent (HTTP ${result.status})`,
         },
         ...(job.events ?? []),

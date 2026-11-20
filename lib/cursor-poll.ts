@@ -76,16 +76,19 @@ export async function settleDispatchedJob(job: Job): Promise<SettleOneResult> {
   if (!agentId) return { status: "skipped", reason: "no_agent" };
   if (isSettling(job.id)) return { status: "waiting" };
 
-  const agent = await getAgent(agentId);
-  if (!agentIsDone(agent.status)) return { status: "waiting" };
+  const { withCursorTokenSlot } = await import("@/lib/cursor-token");
+  return withCursorTokenSlot(job.cursorTokenSlot, async () => {
+    const agent = await getAgent(agentId);
+    if (!agentIsDone(agent.status)) return { status: "waiting" as const };
 
-  const result = await settleAgentJob(job.id, agentId, { trigger: "poll" });
-  if (!result.ok) return { status: "waiting" };
-  if (result.followUp) {
-    await runArtifactFollowUp(result.followUp);
-    return { status: "settled", artifactFollowUp: true };
-  }
-  return { status: "settled", artifactFollowUp: false };
+    const result = await settleAgentJob(job.id, agentId, { trigger: "poll" });
+    if (!result.ok) return { status: "waiting" as const };
+    if (result.followUp) {
+      await runArtifactFollowUp(result.followUp);
+      return { status: "settled" as const, artifactFollowUp: true };
+    }
+    return { status: "settled" as const, artifactFollowUp: false };
+  });
 }
 
 /** Settle any dispatched jobs whose Cursor agent has finished (manual catch-up). */

@@ -7,6 +7,7 @@ import {
   getFinalAssistantAnswer,
   normalizeCursorAgentId,
 } from "@/lib/cursor-api";
+import { withCursorTokenSlot } from "@/lib/cursor-token";
 import { userRequestedPdf } from "@/lib/automation-prompt";
 import { followUpArtifacts } from "@/lib/artifact-followup";
 import {
@@ -130,6 +131,7 @@ export async function settleAgentJob(
       };
     }
 
+    return withCursorTokenSlot(claimed.cursorTokenSlot, async () => {
     if (claimed.followUpAgentId) {
       const preview = await getAgentConversation(agentId);
       if (!conversationIncludesPrompt(preview.messages ?? [], claimed.prompt)) {
@@ -260,6 +262,7 @@ export async function settleAgentJob(
     }
 
     return { ok: true };
+    });
   } catch (error) {
     console.error(`[relay] settleAgentJob failed for ${jobId}`, error);
     await addJobEvent(

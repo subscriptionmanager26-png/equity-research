@@ -18,6 +18,10 @@ function resolvePublicUrl() {
 export function getConfig() {
   const cursorWebhookUrl = trim(process.env.CURSOR_WEBHOOK_URL);
   const cursorWebhookToken = trim(process.env.CURSOR_WEBHOOK_TOKEN);
+  // Exact Vercel secret name (case-sensitive).
+  const cursorWebhookTokenSaffronai = trim(
+    process.env.Cursor_webhook_token_saffronai,
+  );
   const telegramBotToken = trim(process.env.TELEGRAM_BOT_TOKEN);
   const telegramChatId = trim(process.env.TELEGRAM_CHAT_ID);
   const telegramWebhookSecret = trim(process.env.TELEGRAM_WEBHOOK_SECRET);
@@ -44,6 +48,7 @@ export function getConfig() {
   return {
     cursorWebhookUrl,
     cursorWebhookToken,
+    cursorWebhookTokenSaffronai,
     telegramBotToken,
     telegramChatId,
     telegramWebhookSecret,
@@ -61,7 +66,9 @@ export function getConfig() {
     slackMentionUserId,
     slackChannelIds,
     slackApiToken,
-    cursorConfigured: Boolean(cursorWebhookToken),
+    cursorConfigured: Boolean(
+      cursorWebhookToken || cursorWebhookTokenSaffronai,
+    ),
     telegramConfigured: Boolean(telegramBotToken),
     slackConfigured: Boolean(slackApiToken),
     slackBotConfigured: Boolean(slackBotToken),
@@ -91,6 +98,7 @@ export function publicStatus() {
   const cfg = getConfig();
   return {
     cursorConfigured: cfg.cursorConfigured,
+    cursorSaffronaiTokenConfigured: Boolean(cfg.cursorWebhookTokenSaffronai),
     telegramConfigured: cfg.telegramConfigured,
     slackConfigured: cfg.slackConfigured,
     slackBotConfigured: cfg.slackBotConfigured,

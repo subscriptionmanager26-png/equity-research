@@ -57,6 +57,11 @@ export type Job = {
   cursorHttpStatus?: number;
   cursorBody?: unknown;
   cursorAgentId?: string;
+  /**
+   * Which Cursor API key launched this agent (`CURSOR_WEBHOOK_TOKEN` vs
+   * `Cursor_webhook_token_saffronai`). Settle/follow-up must use the same account.
+   */
+  cursorTokenSlot?: "primary" | "saffronai";
   /** When set, Relay follows up this Cloud Agent instead of creating a new one. */
   followUpAgentId?: string;
   telegramInboundMessageId?: number;
