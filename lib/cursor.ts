@@ -271,7 +271,7 @@ export async function dispatchToCursor(job: Job): Promise<CursorDispatchResult> 
   const slots = listCursorTokenSlots();
   if (!slots.length) {
     throw new Error(
-      "Cursor API token is not configured (CURSOR_WEBHOOK_TOKEN or CURSOR_WEBHOOK_TOKEN_SAFFRONAI)",
+      "Cursor API token is not configured (CURSOR_WEBHOOK_TOKEN or Cursor_webhook_token_saffronai)",
     );
   }
 
@@ -306,7 +306,7 @@ export async function dispatchToCursor(job: Job): Promise<CursorDispatchResult> 
     if (result.ok) {
       if (candidate.slot === "saffronai") {
         console.info(
-          `[relay] Dispatched ${job.id} with CURSOR_WEBHOOK_TOKEN_SAFFRONAI`,
+          `[relay] Dispatched ${job.id} with Cursor_webhook_token_saffronai`,
         );
       }
       return last;

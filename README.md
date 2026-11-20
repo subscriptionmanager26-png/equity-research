@@ -95,7 +95,7 @@ Optional: point Cursor cloud-agent **statusChange** webhooks at `{PUBLIC_URL}/ap
 | `CURSOR_AGENT_MODEL` | Optional. Cloud Agent model id (`grok-4.6`, `composer-2.5`, `claude-opus-5`, …). Omit = Cursor account default |
 | `CURSOR_AGENT_MODEL_PARAMS` | Optional. Comma-separated `effort=high,fast=false` (and other params from `GET /v1/models`) |
 | `CURSOR_WEBHOOK_URL` | Optional Automations webhook; unused unless `CURSOR_USE_AUTOMATION_WEBHOOK=true` |
-| `CURSOR_WEBHOOK_TOKEN_SAFFRONAI` | Optional SaffronAI Cursor API key. Failover when primary create fails with auth/quota errors |
+| `Cursor_webhook_token_saffronai` | Optional SaffronAI Cursor API key. Failover when primary create fails with auth/quota errors |
 | `TELEGRAM_BOT_TOKEN` | BotFather token |
 | `TELEGRAM_CHAT_ID` | Optional fixed chat. Otherwise the first `/start` is remembered |
 | `SLACK_BOT_TOKEN` | Bot token (`xoxb-…`) for Vercel Events API |

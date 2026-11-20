@@ -18,8 +18,9 @@ function resolvePublicUrl() {
 export function getConfig() {
   const cursorWebhookUrl = trim(process.env.CURSOR_WEBHOOK_URL);
   const cursorWebhookToken = trim(process.env.CURSOR_WEBHOOK_TOKEN);
+  // Exact Vercel secret name (case-sensitive).
   const cursorWebhookTokenSaffronai = trim(
-    process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI,
+    process.env.Cursor_webhook_token_saffronai,
   );
   const telegramBotToken = trim(process.env.TELEGRAM_BOT_TOKEN);
   const telegramChatId = trim(process.env.TELEGRAM_CHAT_ID);

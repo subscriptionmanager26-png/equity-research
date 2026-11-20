@@ -35,9 +35,9 @@ describe("shouldFailoverCursorCreate", () => {
 describe("cursor token slots", () => {
   it("lists primary and saffronai when both env vars are set", () => {
     const prev = process.env.CURSOR_WEBHOOK_TOKEN;
-    const prevSaffron = process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI;
+    const prevSaffron = process.env.Cursor_webhook_token_saffronai;
     process.env.CURSOR_WEBHOOK_TOKEN = "tok-primary";
-    process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI = "tok-saffronai";
+    process.env.Cursor_webhook_token_saffronai = "tok-saffronai";
     try {
       assert.deepEqual(listCursorTokenSlots(), [
         { slot: "primary", token: "tok-primary" },
@@ -52,9 +52,9 @@ describe("cursor token slots", () => {
       if (prev === undefined) delete process.env.CURSOR_WEBHOOK_TOKEN;
       else process.env.CURSOR_WEBHOOK_TOKEN = prev;
       if (prevSaffron === undefined) {
-        delete process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI;
+        delete process.env.Cursor_webhook_token_saffronai;
       } else {
-        process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI = prevSaffron;
+        process.env.Cursor_webhook_token_saffronai = prevSaffron;
       }
     }
   });
