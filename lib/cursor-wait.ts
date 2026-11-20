@@ -82,6 +82,8 @@ function backoffMsForAge(ageMs: number) {
 
 async function waitAndSettle(jobId: string, agentId: string, startedAt: number) {
   const job = await getJob(jobId);
+  const { withCursorTokenSlot } = await import("@/lib/cursor-token");
+  await withCursorTokenSlot(job?.cursorTokenSlot, async () => {
   while (true) {
     const ageMs = Date.now() - startedAt;
     if (ageMs > TIMEOUT_MS) {
@@ -133,6 +135,7 @@ async function waitAndSettle(jobId: string, agentId: string, startedAt: number) 
       await sleep(backoffMsForAge(ageMs));
     }
   }
+  });
 }
 
 function sleep(ms: number) {

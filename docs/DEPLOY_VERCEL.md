@@ -45,6 +45,7 @@ In Vercel → **Settings** → **Environment Variables**, add:
 | Variable | Required |
 |----------|----------|
 | `CURSOR_WEBHOOK_TOKEN` | Yes (Cursor API key) |
+| `CURSOR_WEBHOOK_TOKEN_ALT` | No (optional second Cursor account API key for create failover) |
 | `CURSOR_WEBHOOK_URL` | No (only if `CURSOR_USE_AUTOMATION_WEBHOOK=true`) |
 | `CURSOR_STATUS_WEBHOOK_SECRET` | Yes (32+ chars) |
 | `TELEGRAM_BOT_TOKEN` | Yes |

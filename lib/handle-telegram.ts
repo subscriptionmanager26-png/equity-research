@@ -97,7 +97,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
         "Watch live status on the Relay dashboard. I will not send Cursor links here.",
         cursorConfigured
           ? "Cursor cloud agent API: configured."
-          : "Cursor API: missing. Set CURSOR_WEBHOOK_TOKEN.",
+          : "Cursor API: missing. Set CURSOR_WEBHOOK_TOKEN (optional CURSOR_WEBHOOK_TOKEN_ALT).",
         "Commands: /start, /help, /status",
       ].join("\n"),
     }).catch(() => undefined);
@@ -150,6 +150,7 @@ export async function handleTelegramMessage(message: TelegramMessage) {
       displayName: name,
       files,
       followUpAgentId,
+      cursorTokenSlot: parent?.cursorTokenSlot,
       telegramInboundMessageId: message.message_id,
       telegramAckMessageId: ackId,
     });

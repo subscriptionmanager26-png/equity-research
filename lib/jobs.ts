@@ -116,6 +116,7 @@ function buildJob(input: {
   threadContext?: string;
   files?: Job["files"];
   followUpAgentId?: string;
+  cursorTokenSlot?: Job["cursorTokenSlot"];
   telegramInboundMessageId?: number;
   telegramAckMessageId?: number;
 }): Job {
@@ -136,6 +137,7 @@ function buildJob(input: {
     threadContext: input.threadContext,
     prompt: input.prompt,
     followUpAgentId: input.followUpAgentId,
+    cursorTokenSlot: input.cursorTokenSlot,
     telegramInboundMessageId: input.telegramInboundMessageId,
     telegramAckMessageId: input.telegramAckMessageId,
     files: input.files,
@@ -166,6 +168,7 @@ export async function createJob(input: {
   threadContext?: string;
   files?: Job["files"];
   followUpAgentId?: string;
+  cursorTokenSlot?: Job["cursorTokenSlot"];
   telegramInboundMessageId?: number;
   telegramAckMessageId?: number;
 }): Promise<Job> {

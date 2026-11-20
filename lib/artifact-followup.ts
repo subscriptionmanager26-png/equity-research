@@ -3,6 +3,7 @@ import {
   collectAgentFilesWithRetry,
   extractMentionedArtifactPaths,
 } from "@/lib/artifact-collect";
+import { withCursorTokenSlot } from "@/lib/cursor-token";
 import { addJobEvent, getJob } from "@/lib/jobs";
 import { deliverReply } from "@/lib/relay";
 import type { Job } from "@/lib/types";
@@ -24,6 +25,7 @@ export async function followUpArtifacts(
   if (!current || current.status !== "replied") return;
   const attempts = (current.pendingArtifacts?.attempts ?? 0) + 1;
 
+  return withCursorTokenSlot(current.cursorTokenSlot, async () => {
   const files = await collectAgentFilesWithRetry(agentId, assistantText, {
     initialDelayMs: 0,
     attempts: 4,
@@ -130,4 +132,5 @@ export async function followUpArtifacts(
   console.info(
     `[relay] Artifact follow-up delivered ${names.join(", ")} for ${jobId}`,
   );
+  });
 }
