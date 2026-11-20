@@ -238,7 +238,9 @@ export async function completeJobDispatch(job: Job): Promise<Job> {
           type: "dispatched",
           detail: agentId
             ? `Started Cursor cloud agent (${agentId}${
-                result.cursorTokenSlot === "alt" ? ", alt account" : ""
+                result.cursorTokenSlot === "saffronai"
+                  ? ", saffronai account"
+                  : ""
               })`
             : `Started Cursor cloud agent (HTTP ${result.status})`,
         },

@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { getConfig } from "@/lib/config";
 
-export type CursorTokenSlot = "primary" | "alt";
+export type CursorTokenSlot = "primary" | "saffronai";
 
 export type CursorTokenCandidate = {
   slot: CursorTokenSlot;
@@ -37,8 +37,8 @@ export function listCursorTokenSlots(): CursorTokenCandidate[] {
   if (cfg.cursorWebhookToken) {
     slots.push({ slot: "primary", token: cfg.cursorWebhookToken });
   }
-  if (cfg.cursorWebhookTokenAlt) {
-    slots.push({ slot: "alt", token: cfg.cursorWebhookTokenAlt });
+  if (cfg.cursorWebhookTokenSaffronai) {
+    slots.push({ slot: "saffronai", token: cfg.cursorWebhookTokenSaffronai });
   }
   return slots;
 }

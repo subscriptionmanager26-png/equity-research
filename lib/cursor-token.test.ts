@@ -33,26 +33,29 @@ describe("shouldFailoverCursorCreate", () => {
 });
 
 describe("cursor token slots", () => {
-  it("lists primary and alt when both env vars are set", () => {
+  it("lists primary and saffronai when both env vars are set", () => {
     const prev = process.env.CURSOR_WEBHOOK_TOKEN;
-    const prevAlt = process.env.CURSOR_WEBHOOK_TOKEN_ALT;
+    const prevSaffron = process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI;
     process.env.CURSOR_WEBHOOK_TOKEN = "tok-primary";
-    process.env.CURSOR_WEBHOOK_TOKEN_ALT = "tok-alt";
+    process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI = "tok-saffronai";
     try {
       assert.deepEqual(listCursorTokenSlots(), [
         { slot: "primary", token: "tok-primary" },
-        { slot: "alt", token: "tok-alt" },
+        { slot: "saffronai", token: "tok-saffronai" },
       ]);
-      assert.equal(resolveCursorToken("alt").token, "tok-alt");
+      assert.equal(resolveCursorToken("saffronai").token, "tok-saffronai");
       assert.deepEqual(
-        orderCursorTokenSlots("alt").map((entry) => entry.slot),
-        ["alt", "primary"],
+        orderCursorTokenSlots("saffronai").map((entry) => entry.slot),
+        ["saffronai", "primary"],
       );
     } finally {
       if (prev === undefined) delete process.env.CURSOR_WEBHOOK_TOKEN;
       else process.env.CURSOR_WEBHOOK_TOKEN = prev;
-      if (prevAlt === undefined) delete process.env.CURSOR_WEBHOOK_TOKEN_ALT;
-      else process.env.CURSOR_WEBHOOK_TOKEN_ALT = prevAlt;
+      if (prevSaffron === undefined) {
+        delete process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI;
+      } else {
+        process.env.CURSOR_WEBHOOK_TOKEN_SAFFRONAI = prevSaffron;
+      }
     }
   });
 
@@ -61,8 +64,8 @@ describe("cursor token slots", () => {
     process.env.CURSOR_WEBHOOK_TOKEN = "tok-primary";
     try {
       assert.equal(getActiveCursorToken(), "tok-primary");
-      await withCursorToken("tok-alt-runtime", async () => {
-        assert.equal(getActiveCursorToken(), "tok-alt-runtime");
+      await withCursorToken("tok-saffronai-runtime", async () => {
+        assert.equal(getActiveCursorToken(), "tok-saffronai-runtime");
       });
       assert.equal(getActiveCursorToken(), "tok-primary");
     } finally {
