@@ -14,6 +14,12 @@ This repository is checked out by Cursor Cloud Agents that answer Telegram and S
 
 For **any financial instrument** (stock, ticker, company, ETF, fund, bond, earnings, filings): follow `.cursor/skills/research/financial-analysis/SKILL.md`. For long reports use `artifacts/<topic>-report.md`; for short answers reply in chat. Relay forwards output unchanged. No PDF unless the user asked for one.
 
+## Privacy: no cross-run agent history
+
+- **Never** call `cursor-cloud` **`list-cloud-agents`** or **`batch-fetch-details`** (enforced by `.cursor/hooks.json`).
+- Use only the **current user message**, **`thread_context`** (same Slack/Telegram thread), and **`files[]`** for portfolio or personal data — not transcripts from other Cloud Agent runs.
+- Built-in `cursor-cloud` cannot be disabled via `.cursor/environment.json` (see Cursor schema: built-in MCP is exempt from `mcpServerAllowlist` / `disableAllMcpServers`). Repo hooks are the non-Enterprise control.
+
 ## Nifty Total Market prices (environment)
 
 Every Cloud Agent environment installs a local SQLite database during `scripts/install-agent-env.sh`:

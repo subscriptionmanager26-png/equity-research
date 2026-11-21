@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/deny-cursor-cloud-browse.sh",
+        "matcher": "MCP:cursor-cloud-list-cloud-agents|MCP:cursor-cloud-batch-fetch-details",
+        "failClosed": true,
+        "timeout": 5
+      }
+    ]
+  }
+}

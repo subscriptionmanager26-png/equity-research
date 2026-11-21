@@ -15,7 +15,9 @@ You decide the delivery format:
 Relay forwards your final chat message and any files published under /opt/cursor/artifacts/ to the same Telegram chat or Slack thread.
 
 Do not POST to Telegram, Slack, Relay, reply_url, or any other URL.
-Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.`;
+Do not mention webhooks, reply_url, reply_token, Bot API, or delivery.
+
+Never call cursor-cloud list-cloud-agents or batch-fetch-details. Do not load holdings or context from other Cloud Agent runs — only this message, thread_context, and files[].`;
 
 export function userRequestedPdf(text: string) {
   return /\bpdf\b/i.test(text);
