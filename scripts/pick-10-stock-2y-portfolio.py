@@ -161,8 +161,19 @@ def score_row(row: dict) -> float:
     return row["sharpe_12_6m"] * 0.55 + row["return_1y"] * 0.35 - row["volatility_1y"] * 0.08
 
 
-def pick_ten(rows: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
-    buckets: dict[str, list[dict]] = {t: [] for t in TIER_QUOTAS}
+EX_LARGE_QUOTAS = {"mid": 3, "small": 3, "micro": 4}
+
+
+def pick_ten(
+    rows: dict[str, dict],
+    quotas: dict[str, int] | None = None,
+    exclude_tiers: set[str] | None = None,
+) -> tuple[list[dict], dict[str, int]]:
+    quotas = quotas or TIER_QUOTAS
+    exclude_tiers = exclude_tiers or set()
+    if exclude_tiers:
+        rows = {k: v for k, v in rows.items() if v["cap_tier"] not in exclude_tiers}
+    buckets: dict[str, list[dict]] = {t: [] for t in quotas}
     funnel = Counter()
 
     for sym, row in rows.items():
@@ -171,8 +182,11 @@ def pick_ten(rows: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
             funnel["above_ma200"] += 1
         if not passes_filters(row):
             continue
-        funnel[f"eligible_{row['cap_tier']}"] += 1
-        buckets[row["cap_tier"]].append({**row, "score": score_row(row)})
+        tier = row["cap_tier"]
+        if tier not in quotas:
+            continue
+        funnel[f"eligible_{tier}"] += 1
+        buckets[tier].append({**row, "score": score_row(row)})
 
     for tier in buckets:
         buckets[tier].sort(key=lambda x: x["score"], reverse=True)
@@ -190,7 +204,7 @@ def pick_ten(rows: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
         sector_count[sec] = sector_count.get(sec, 0) + 1
         return True
 
-    for tier, quota in TIER_QUOTAS.items():
+    for tier, quota in quotas.items():
         n = 0
         for row in buckets.get(tier, []):
             if n >= quota:
@@ -201,14 +215,14 @@ def pick_ten(rows: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
     # Fill any empty slots from global ranked pool (still tier-aware order).
     if len(picked) < 10:
         pool = []
-        for tier in ("large", "mid", "small", "micro"):
+        for tier in quotas:
             pool.extend(buckets.get(tier, []))
         pool.sort(key=lambda x: x["score"], reverse=True)
         tier_counts = Counter(p["cap_tier"] for p in picked)
         for row in pool:
             if len(picked) >= 10:
                 break
-            if tier_counts[row["cap_tier"]] >= TIER_QUOTAS[row["cap_tier"]]:
+            if tier_counts[row["cap_tier"]] >= quotas[row["cap_tier"]]:
                 continue
             if try_add(row):
                 tier_counts[row["cap_tier"]] += 1
@@ -217,6 +231,16 @@ def pick_ten(rows: dict[str, dict]) -> tuple[list[dict], dict[str, int]]:
 
 
 def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--exclude-large",
+        action="store_true",
+        help="Exclude Nifty 100 (large cap); quotas 3 mid / 3 small / 4 micro",
+    )
+    args = ap.parse_args()
+
     path = db_path()
     if not path.is_file():
         raise SystemExit(f"Prices DB not found: {path}")
@@ -227,16 +251,19 @@ def main() -> None:
     as_of = conn.execute("SELECT computed_at FROM symbol_metrics LIMIT 1").fetchone()
     conn.close()
 
-    picks, funnel = pick_ten(rows)
+    quotas = EX_LARGE_QUOTAS if args.exclude_large else TIER_QUOTAS
+    exclude = {"large"} if args.exclude_large else set()
+    picks, funnel = pick_ten(rows, quotas=quotas, exclude_tiers=exclude)
     payload = {
         "db_path": str(path),
         "metrics_as_of": as_of[0] if as_of else None,
+        "exclude_large_cap": args.exclude_large,
         "universe_note": (
             "Metrics cover Nifty Total Market (~746 NSE symbols with 2Y adjusted EOD). "
             "Full NSE EQ (~3.5k) and BSE listings are not in this SQLite; "
             "bhavcopy-wide build is a separate job."
         ),
-        "tier_quotas": TIER_QUOTAS,
+        "tier_quotas": quotas,
         "filter_funnel": funnel,
         "methodology": {
             "rank": "0.55*avg_sharpe_12_6m + 0.35*1Y_return - 0.08*vol",
