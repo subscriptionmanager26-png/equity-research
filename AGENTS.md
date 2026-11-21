@@ -21,3 +21,4 @@ Every Cloud Agent environment installs a local SQLite database during `scripts/i
 - Path: `$HOME/.local/share/equity-research/prices/nifty-total-market-2y.sqlite`
 - Manifest: `data/prices-manifest.json` (source URLs + expected sha256)
 - Use `eod_adjusted` for returns, screens, and backtests; see `data/README.md`
+- If Blob download returns 403, `scripts/install-price-database.sh` builds the DB via `scripts/build-prices-database.sh` (momentum-screen-builder)

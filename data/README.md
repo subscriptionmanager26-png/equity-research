@@ -24,6 +24,18 @@ The install script also writes `$HOME/.local/share/equity-research/prices/PRICES
 - `symbol_metrics` — per-symbol summary metrics from the build pipeline
 - `build_meta` — build timestamps and adjustment notes
 
+## If Blob download returns 403
+
+The public Vercel Blob URLs in `prices-manifest.json` can expire when the store is empty or `PRICES_MANIFEST_URL` is unset on [momentum-screen-builder](https://github.com/kushagra-agarwal-a/momentum-screen-builder). Cloud agents fall back to a **local build**:
+
+```bash
+bash scripts/build-prices-database.sh
+# or (default when download fails):
+PRICES_BUILD_ON_MISS=1 bash scripts/install-price-database.sh
+```
+
+Republish for shared download: see momentum-screen-builder `scripts/publish_prices_db.mjs` and set `PRICES_MANIFEST_URL` on the Vercel project.
+
 ## Refresh
 
 After republishing the blob, sync the repo manifest from the published source of truth:

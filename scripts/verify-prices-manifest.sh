@@ -19,8 +19,21 @@ if not url:
     print("[prices-manifest] manifest_url missing in local file", file=sys.stderr)
     sys.exit(1)
 
-with urllib.request.urlopen(url, timeout=120) as resp:
-    remote = json.load(resp)
+try:
+    with urllib.request.urlopen(url, timeout=120) as resp:
+        remote = json.load(resp)
+except urllib.error.HTTPError as e:
+    if e.code in (403, 404, 502, 503):
+        print(
+            f"[prices-manifest] warning: published manifest unreachable ({e.code}); "
+            "agents should use PRICES_BUILD_ON_MISS=1",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+    raise
+except OSError as e:
+    print(f"[prices-manifest] warning: could not fetch manifest ({e})", file=sys.stderr)
+    sys.exit(0)
 
 local_sha = (local.get("sha256") or "").lower()
 remote_sha = (remote.get("sha256") or "").lower()
